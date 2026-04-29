@@ -17,6 +17,8 @@
     "format": "oxfmt src/"
   },
   "dependencies": {
+    "firebase": "^12.12.1",
+    "leaflet": "^1.9.4",
     "pinia": "^3.0.4",
     "vue": "beta",
     "vue-router": "^5.0.4"
