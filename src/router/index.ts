@@ -1,8 +1,66 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from "vue-router";
+import { useAuthStore } from "../modules/auth/stores/authStore";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [],
-})
+  routes: [
+    {
+      path: "/",
+      redirect: "/customer",
+    },
+    {
+      path: "/login",
+      name: "login",
+      component: () => import("../modules/auth/views/AuthView.vue"),
+      meta: { public: true },
+    },
+    {
+      path: "/customer",
+      name: "customer",
+      component: () => import("../modules/orders/views/CustomerDashboard.vue"),
+      meta: { requiresAuth: true, role: ["customer", "admin"] },
+    },
+    {
+      path: "/driver",
+      name: "driver",
+      component: () => import("../modules/orders/views/DriverDashboard.vue"),
+      meta: { requiresAuth: true, role: ["driver", "admin"] },
+    },
+    {
+      path: "/admin",
+      name: "admin",
+      component: () => import("../modules/orders/views/AdminDashboard.vue"),
+      meta: { requiresAuth: true, role: ["admin"] },
+    },
+    {
+      path: "/orders/:id",
+      name: "order-detail",
+      component: () => import("../modules/orders/views/OrderDetailView.vue"),
+      meta: { requiresAuth: true },
+    },
+  ],
+});
 
-export default router
+router.beforeEach(async (to) => {
+  const authStore = useAuthStore();
+  await authStore.initAuth();
+
+  if (to.meta.public) {
+    return true;
+  }
+
+  if (!authStore.user.value) {
+    return { path: "/login", query: { redirect: to.fullPath } };
+  }
+
+  const allowedRoles = to.meta.role as string[] | undefined;
+  const role = authStore.profile.value?.role ?? "customer";
+
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    return { path: "/customer" };
+  }
+
+  return true;
+});
+
+export default router;

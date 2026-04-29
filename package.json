@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "serve": "vite",
+    "watch": "node watch-and-build.cjs",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
@@ -17,7 +18,7 @@
     "format": "oxfmt src/"
   },
   "dependencies": {
-    "firebase": "^12.12.1",
+    "@supabase/supabase-js": "^2.49.0",
     "leaflet": "^1.9.4",
     "pinia": "^3.0.4",
     "vue": "beta",
@@ -27,6 +28,7 @@
     "@playwright/test": "^1.59.1",
     "@tsconfig/node24": "^24.0.4",
     "@types/jsdom": "^28.0.1",
+    "@types/leaflet": "^1.9.20",
     "@types/node": "^24.12.2",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vitejs/plugin-vue-jsx": "^5.1.5",
