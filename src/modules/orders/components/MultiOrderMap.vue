@@ -1,32 +1,28 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Order } from "../types";
 import { fetchOrderById, subscribeOrder } from "../services/orderService";
 
 const props = defineProps<{
-  orderId: string;
+  orders: Order[];
 }>();
 
 const mapEl = ref<HTMLDivElement | null>(null);
 const map = shallowRef<L.Map | null>(null);
-const marker = shallowRef<L.Marker | null>(null);
+const markers = shallowRef<Record<string, L.Marker>>({});
 const autoFollow = ref(true);
-const order = ref<Order | null>(null);
+const trackingOrders = ref<Record<string, Order>>({});
 const loading = ref(true);
 
-let unsubscribe: (() => void) | null = null;
+let unsubscribes: Record<string, () => void> = {};
 
-const statusText = computed(() => order.value?.status ?? "Belum ada status");
-
-const coordsText = computed(() => {
-  if (!order.value || order.value.lat === null || order.value.lng === null) {
-    return "-";
-  }
-
-  return `${order.value.lat.toFixed(6)}, ${order.value.lng.toFixed(6)}`;
-});
+// Helper to format coordinates
+const getCoordsText = (data: Order | null) => {
+  if (!data || data.lat === null || data.lng === null) return "-";
+  return `${data.lat.toFixed(6)}, ${data.lng.toFixed(6)}`;
+};
 
 const updateMarker = (data: Order | null) => {
   if (!data || data.lat === null || data.lng === null || !map.value) {
@@ -41,6 +37,7 @@ const updateMarker = (data: Order | null) => {
         <circle cx="5.5" cy="18.5" r="2.5"></circle>
         <circle cx="18.5" cy="18.5" r="2.5"></circle>
       </svg>
+      <div class="pin-label">${data.notes ? data.notes.substring(0, 10) : 'Truk'}</div>
     </div>`,
     className: "custom-truck-pin",
     iconSize: [36, 36],
@@ -49,16 +46,59 @@ const updateMarker = (data: Order | null) => {
 
   const position: [number, number] = [data.lat, data.lng];
 
-  if (!marker.value) {
-    marker.value = L.marker(position, { icon: markerIcon })
+  if (!markers.value[data.id]) {
+    markers.value[data.id] = L.marker(position, { icon: markerIcon })
       .addTo(map.value)
-      .bindPopup("Posisi truk");
+      .bindPopup(`<b>${data.notes || 'Truk'}</b><br>Status: ${data.status}`);
   } else {
-    marker.value.setLatLng(position);
+    markers.value[data.id].setLatLng(position);
+    markers.value[data.id].setIcon(markerIcon);
+    markers.value[data.id].setPopupContent(`<b>${data.notes || 'Truk'}</b><br>Status: ${data.status}`);
   }
 
   if (autoFollow.value) {
-    map.value.setView(position, 16);
+    const bounds = L.latLngBounds(Object.values(markers.value).map(m => m.getLatLng()));
+    if (bounds.isValid()) {
+      map.value.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+    }
+  }
+};
+
+const setupTracking = async () => {
+  // Clear old subs
+  Object.values(unsubscribes).forEach((unsub) => unsub());
+  unsubscribes = {};
+  
+  // Clear old markers
+  if (map.value) {
+    Object.values(markers.value).forEach((m) => m.remove());
+  }
+  markers.value = {};
+  trackingOrders.value = {};
+
+  if (!props.orders || props.orders.length === 0) {
+    loading.value = false;
+    return;
+  }
+
+  loading.value = true;
+  try {
+    for (const order of props.orders) {
+      const liveOrder = await fetchOrderById(order.id);
+      if (liveOrder) {
+        trackingOrders.value[order.id] = liveOrder;
+        updateMarker(liveOrder);
+      }
+
+      unsubscribes[order.id] = subscribeOrder(order.id, (updatedOrder) => {
+        trackingOrders.value[order.id] = updatedOrder;
+        updateMarker(updatedOrder);
+      });
+    }
+  } catch (error) {
+    console.error("Failed to load tracking data", error);
+  } finally {
+    loading.value = false;
   }
 };
 
@@ -75,26 +115,16 @@ onMounted(async () => {
     attribution: "(c) OpenStreetMap",
   }).addTo(mapInstance);
 
-  try {
-    order.value = await fetchOrderById(props.orderId);
-    updateMarker(order.value);
-  } catch (error) {
-    console.error("Failed to load order", error);
-  } finally {
-    loading.value = false;
-  }
-
-  unsubscribe = subscribeOrder(props.orderId, (updatedOrder) => {
-    order.value = updatedOrder;
-    updateMarker(updatedOrder);
-  });
+  await setupTracking();
 });
 
+watch(() => props.orders, () => {
+  setupTracking();
+}, { deep: true });
+
 onBeforeUnmount(() => {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
-  }
+  Object.values(unsubscribes).forEach((unsub) => unsub());
+  unsubscribes = {};
 
   if (map.value) {
     map.value.remove();
@@ -107,8 +137,8 @@ onBeforeUnmount(() => {
   <section class="map-card">
     <header class="map-header">
       <div>
-        <h3>Live Tracking</h3>
-        <p>Status: {{ statusText }}</p>
+        <h3>Live Tracking ({{ orders.length }} Truk)</h3>
+        <p>Status perjalanan pengiriman air kamu.</p>
       </div>
       <label class="toggle">
         <input v-model="autoFollow" type="checkbox" />
@@ -119,11 +149,13 @@ onBeforeUnmount(() => {
     <div class="map-wrapper">
       <div ref="mapEl" class="map"></div>
       <div v-if="loading" class="map-overlay">Memuat tracking...</div>
-      <div v-else-if="coordsText === '-'" class="map-overlay">Lokasi belum dikirim.</div>
+      <div v-else-if="Object.keys(markers).length === 0" class="map-overlay">Belum ada truk yang mengirim lokasi.</div>
     </div>
 
     <footer class="map-footer">
-      <span>Koordinat: {{ coordsText }}</span>
+      <div v-for="order in props.orders" :key="order.id">
+        <span><b>{{ order.notes || 'Truk' }}:</b> {{ getCoordsText(trackingOrders[order.id] || order) }}</span>
+      </div>
     </footer>
   </section>
 </template>
@@ -185,20 +217,24 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   text-align: center;
   padding: 16px;
+  z-index: 999;
 }
 
 .map-footer {
   margin-top: 12px;
   font-size: 13px;
   color: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.custom-truck-pin {
+:deep(.custom-truck-pin) {
   background: transparent;
   border: none;
 }
 
-.truck-pin {
+:deep(.truck-pin) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -207,9 +243,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.35);
+  position: relative;
+}
+
+:deep(.pin-label) {
+  position: absolute;
+  bottom: -20px;
+  background: #fff;
+  color: #0f172a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 </style>

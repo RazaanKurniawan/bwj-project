@@ -9,6 +9,7 @@ const router = useRouter();
 
 const isLoggedIn = computed(() => Boolean(authStore.user.value));
 const userRole = computed(() => authStore.profile.value?.role ?? "customer");
+const isCustomer = computed(() => userRole.value === "customer" || userRole.value === "admin");
 const isDriver = computed(() => userRole.value === "driver" || userRole.value === "admin");
 const isAdmin = computed(() => userRole.value === "admin");
 const displayName = computed(() => {
@@ -37,7 +38,7 @@ onMounted(() => {
         </div>
       </div>
       <nav class="nav-links">
-        <RouterLink to="/customer">Customer</RouterLink>
+        <RouterLink v-if="isCustomer" to="/customer">Customer</RouterLink>
         <RouterLink v-if="isDriver" to="/driver">Supir</RouterLink>
         <RouterLink v-if="isAdmin" to="/admin">Admin</RouterLink>
         <RouterLink v-if="!isLoggedIn" to="/login">Login</RouterLink>

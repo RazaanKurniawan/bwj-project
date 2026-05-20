@@ -22,10 +22,14 @@ export const upsertProfile = async (profile: Profile) => {
     .from("profiles")
     .upsert(profile, { onConflict: "id" })
     .select(PROFILE_FIELDS)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  if (!data) {
+    throw new Error("Gagal menyimpan profil.");
   }
 
   return data as Profile;

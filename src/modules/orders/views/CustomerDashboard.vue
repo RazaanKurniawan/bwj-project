@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import OrderForm from "../components/OrderForm.vue";
 import OrderList from "../components/OrderList.vue";
+import MultiOrderMap from "../components/MultiOrderMap.vue";
 import type { Order } from "../types";
 import { fetchCustomerOrders } from "../services/orderService";
 import { useAuthStore } from "../../auth/stores/authStore";
@@ -14,6 +15,10 @@ const errorMsg = ref("");
 const userId = computed(() => authStore.user.value?.id ?? null);
 const customerName = computed(() => authStore.profile.value?.name ?? null);
 const customerPhone = computed(() => authStore.profile.value?.phone ?? null);
+
+const activeOrders = computed(() => {
+  return orders.value.filter(o => o.status === 'diproses' || o.status === 'dikirim');
+});
 
 const loadOrders = async () => {
   const uid = userId.value;
@@ -33,8 +38,8 @@ const loadOrders = async () => {
   }
 };
 
-const handleCreated = (order: Order) => {
-  orders.value = [order, ...orders.value];
+const handleCreated = (newOrders: Order[]) => {
+  orders.value = [...newOrders, ...orders.value];
 };
 
 onMounted(async () => {
@@ -56,7 +61,10 @@ onMounted(async () => {
     <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
     <p v-if="loading" class="info">Memuat pesanan...</p>
 
-    <OrderList v-else :orders="orders" />
+    <template v-else>
+      <MultiOrderMap v-if="activeOrders.length > 0" :orders="activeOrders" />
+      <OrderList :orders="orders" />
+    </template>
   </div>
 </template>
 

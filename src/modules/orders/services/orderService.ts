@@ -8,10 +8,14 @@ export const createOrder = async (payload: NewOrder) => {
     .from("orders")
     .insert(payload)
     .select(ORDER_FIELDS)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  if (!data) {
+    throw new Error("Gagal membuat pesanan: tidak ada data yang dikembalikan.");
   }
 
   return data as Order;
@@ -93,10 +97,14 @@ export const updateOrder = async (orderId: string, patch: Partial<Order>) => {
     .update(patch)
     .eq("id", orderId)
     .select(ORDER_FIELDS)
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  if (!data) {
+    throw new Error("Gagal update pesanan: order tidak ditemukan.");
   }
 
   return data as Order;

@@ -10,14 +10,15 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "created", order: Order): void;
+  (event: "created", orders: Order[]): void;
 }>();
 
 const name = ref(props.customerName ?? "");
 const phone = ref(props.customerPhone ?? "");
 const address = ref("");
 const scheduleAt = ref("");
-const volume = ref("1 galon");
+const volume = ref("5000 Liter");
+const truckCount = ref(1);
 const notes = ref("");
 const loading = ref(false);
 const errorMsg = ref("");
@@ -25,7 +26,8 @@ const errorMsg = ref("");
 const resetForm = () => {
   address.value = "";
   scheduleAt.value = "";
-  volume.value = "1 galon";
+  volume.value = "5000 Liter";
+  truckCount.value = 1;
   notes.value = "";
 };
 
@@ -34,26 +36,35 @@ const handleSubmit = async () => {
   errorMsg.value = "";
 
   const schedule = scheduleAt.value ? new Date(scheduleAt.value).toISOString() : null;
+  const count = Number(truckCount.value);
+  const newOrders: Order[] = [];
 
   try {
-    const order = await createOrder({
-      customer_id: props.customerId,
-      customer_name: name.value,
-      phone: phone.value,
-      address: address.value,
-      schedule_at: schedule,
-      volume: volume.value,
-      notes: notes.value || null,
-      status: "menunggu",
-      truck_id: null,
-      assigned_driver_id: null,
-      lat: null,
-      lng: null,
-      accuracy: null,
-    });
+    for (let i = 0; i < count; i++) {
+      const orderNotes = count > 1 
+        ? `${notes.value ? notes.value + ' | ' : ''}Truk ${i + 1} dari ${count}`
+        : (notes.value || null);
+
+      const order = await createOrder({
+        customer_id: props.customerId,
+        customer_name: name.value,
+        phone: phone.value,
+        address: address.value,
+        schedule_at: schedule,
+        volume: volume.value,
+        notes: orderNotes,
+        status: "menunggu",
+        truck_id: null,
+        assigned_driver_id: null,
+        lat: null,
+        lng: null,
+        accuracy: null,
+      });
+      newOrders.push(order);
+    }
 
     resetForm();
-    emit("created", order);
+    emit("created", newOrders);
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : "Gagal membuat pesanan.";
   } finally {
@@ -86,15 +97,23 @@ const handleSubmit = async () => {
         <span>Jadwal</span>
         <input v-model="scheduleAt" type="datetime-local" />
       </label>
-      <label class="field">
-        <span>Volume</span>
-        <select v-model="volume">
-          <option>1 galon</option>
-          <option>2 galon</option>
-          <option>3 galon</option>
-          <option>5 galon</option>
-        </select>
-      </label>
+      <div class="row-fields">
+        <label class="field">
+          <span>Volume per Truk</span>
+          <select v-model="volume">
+            <option>5000 Liter</option>
+            <option>8000 Liter</option>
+            <option>10000 Liter</option>
+            <option>16000 Liter</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Jumlah Truk</span>
+          <select v-model="truckCount">
+            <option v-for="n in 10" :key="n" :value="n">{{ n }} Truk</option>
+          </select>
+        </label>
+      </div>
       <label class="field">
         <span>Catatan</span>
         <textarea v-model="notes" rows="2" placeholder="Contoh: Tolong hubungi sebelum sampai"></textarea>
@@ -169,5 +188,11 @@ header p {
 .btn-primary:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.row-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 </style>

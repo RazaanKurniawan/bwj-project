@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import type { Order, OrderStatus } from "../types";
 import {
   claimOrder,
@@ -19,6 +19,10 @@ const loading = ref(true);
 const errorMsg = ref("");
 
 const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
+
+const hasActiveOrder = computed(() => {
+  return assignedOrders.value.some(o => o.status !== "selesai" && o.status !== "batal");
+});
 
 const refresh = async () => {
   const user = authStore.user.value;
@@ -48,6 +52,11 @@ const refresh = async () => {
 };
 
 const handleClaim = async (orderId: string) => {
+  if (hasActiveOrder.value) {
+    errorMsg.value = "Selesaikan pesanan saat ini sebelum mengambil pesanan baru.";
+    return;
+  }
+
   const user = authStore.user.value;
   if (!user) {
     return;
@@ -119,13 +128,42 @@ onMounted(async () => {
 
     <section class="card" v-if="availableOrders.length">
       <h3>Pesanan Menunggu</h3>
+      <p v-if="hasActiveOrder" class="warning-text">Selesaikan pesanan aktif kamu sebelum mengambil pesanan baru.</p>
       <ul class="order-list">
-        <li v-for="order in availableOrders" :key="order.id" class="order-item">
-          <div>
-            <strong>{{ order.customer_name }}</strong>
-            <p>{{ order.address }}</p>
+        <li v-for="order in availableOrders" :key="order.id" class="order-item available-order">
+          <div class="available-order-header">
+            <div>
+              <strong>{{ order.customer_name }}</strong>
+              <p class="address">{{ order.address }}</p>
+            </div>
+            <OrderStatusBadge :status="order.status" />
           </div>
-          <button class="btn-primary" @click="handleClaim(order.id)">Ambil Pesanan</button>
+          <div class="available-order-details">
+            <div class="detail-item">
+              <span class="detail-label">No HP</span>
+              <span class="detail-value">{{ order.phone }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Volume</span>
+              <span class="detail-value">{{ order.volume }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Jadwal</span>
+              <span class="detail-value">{{ order.schedule_at ? new Date(order.schedule_at).toLocaleString() : '-' }}</span>
+            </div>
+            <div v-if="order.notes" class="detail-item detail-notes">
+              <span class="detail-label">Catatan</span>
+              <span class="detail-value">{{ order.notes }}</span>
+            </div>
+          </div>
+          <div class="available-order-actions">
+            <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-outline">
+              Lihat Detail
+            </router-link>
+            <button class="btn-primary" @click="handleClaim(order.id)" :disabled="hasActiveOrder" :title="hasActiveOrder ? 'Selesaikan pesanan aktif terlebih dahulu' : ''">
+              Ambil Pesanan
+            </button>
+          </div>
         </li>
       </ul>
     </section>
@@ -261,11 +299,73 @@ onMounted(async () => {
   padding: 12px 0;
 }
 
+.warning-text {
+  color: #d97706;
+  font-size: 14px;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
 .error {
   color: #dc2626;
 }
 
 .info {
   color: #64748b;
+}
+
+.available-order {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.available-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.available-order-header .address {
+  margin: 4px 0 0;
+  color: #475569;
+}
+
+.available-order-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  margin-top: 10px;
+}
+
+.detail-notes {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detail-value {
+  display: block;
+  margin-top: 4px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.available-order-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
 }
 </style>
