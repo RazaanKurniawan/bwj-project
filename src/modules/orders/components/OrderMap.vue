@@ -28,7 +28,44 @@ const coordsText = computed(() => {
   return `${order.value.lat.toFixed(6)}, ${order.value.lng.toFixed(6)}`;
 });
 
-const updateMarker = (data: Order | null) => {
+const etaText = ref("-");
+const distanceText = ref("-");
+const routeLayer = shallowRef<L.GeoJSON | null>(null);
+const customerMarker = shallowRef<L.Marker | null>(null);
+
+const geocodeAddress = async (address: string) => {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    }
+  } catch (err) {
+    console.error("Geocoding failed", err);
+  }
+  // Mock fallback location if not found (Jakarta)
+  return { lat: -6.200000, lng: 106.816666 };
+};
+
+const fetchRoute = async (start: [number, number], end: [number, number]) => {
+  try {
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`);
+    const data = await res.json();
+    if (data.code === "Ok" && data.routes.length > 0) {
+      const route = data.routes[0];
+      return {
+        distance: route.distance, // meters
+        duration: route.duration, // seconds
+        geometry: route.geometry
+      };
+    }
+  } catch (err) {
+    console.error("OSRM failed", err);
+  }
+  return null;
+};
+
+const updateMarker = async (data: Order | null) => {
   if (!data || data.lat === null || data.lng === null || !map.value) {
     return;
   }
@@ -57,7 +94,53 @@ const updateMarker = (data: Order | null) => {
     marker.value.setLatLng(position);
   }
 
-  if (autoFollow.value) {
+  // Geocode customer location if not already
+  if (!customerMarker.value) {
+    let coords: { lat: number, lng: number } | null = null;
+    
+    // Gunakan GPS asli pelanggan jika ada!
+    if (data.customer_lat && data.customer_lng) {
+      coords = { lat: data.customer_lat, lng: data.customer_lng };
+    } else if (data.address) {
+      coords = await geocodeAddress(data.address);
+    }
+
+    if (coords && map.value) {
+      const customerIcon = L.divIcon({
+        html: `<div style="background:#dc2626; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
+        className: 'customer-pin',
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      });
+      customerMarker.value = L.marker([coords.lat, coords.lng], { icon: customerIcon })
+        .addTo(map.value)
+        .bindPopup("Lokasi Pelanggan");
+    }
+  }
+
+  // Draw Route & Calculate ETA
+  if (customerMarker.value) {
+    const start: [number, number] = position;
+    const end: [number, number] = [customerMarker.value.getLatLng().lat, customerMarker.value.getLatLng().lng];
+    const route = await fetchRoute(start, end);
+    
+    if (route && map.value) {
+      distanceText.value = (route.distance / 1000).toFixed(1) + " Km";
+      etaText.value = Math.ceil(route.duration / 60) + " Menit";
+      
+      if (routeLayer.value) {
+        map.value.removeLayer(routeLayer.value);
+      }
+      
+      routeLayer.value = L.geoJSON(route.geometry as any, {
+        style: { color: '#3b82f6', weight: 4, opacity: 0.8 }
+      }).addTo(map.value);
+      
+      if (autoFollow.value) {
+        map.value.fitBounds(routeLayer.value.getBounds(), { padding: [50, 50] });
+      }
+    }
+  } else if (autoFollow.value && map.value) {
     map.value.setView(position, 16);
   }
 };
@@ -110,11 +193,24 @@ onBeforeUnmount(() => {
         <h3>Live Tracking</h3>
         <p>Status: {{ statusText }}</p>
       </div>
-      <label class="toggle">
-        <input v-model="autoFollow" type="checkbox" />
-        Auto-follow
-      </label>
+      <div class="header-right">
+        <label class="toggle">
+          <input v-model="autoFollow" type="checkbox" />
+          Auto-follow
+        </label>
+      </div>
     </header>
+
+    <div class="eta-panel" v-if="distanceText !== '-'">
+      <div class="eta-item">
+        <span class="eta-label">Jarak</span>
+        <span class="eta-val">{{ distanceText }}</span>
+      </div>
+      <div class="eta-item">
+        <span class="eta-label">Estimasi Tiba</span>
+        <span class="eta-val highlight">{{ etaText }}</span>
+      </div>
+    </div>
 
     <div class="map-wrapper">
       <div ref="mapEl" class="map"></div>
@@ -155,12 +251,53 @@ onBeforeUnmount(() => {
   color: #64748b;
 }
 
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
 .toggle {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   color: #334155;
+}
+
+.eta-panel {
+  display: flex;
+  gap: 20px;
+  background: #f8fafc;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+}
+
+.eta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.eta-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.eta-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 4px;
+}
+
+.eta-val.highlight {
+  color: #2563eb;
 }
 
 .map-wrapper {

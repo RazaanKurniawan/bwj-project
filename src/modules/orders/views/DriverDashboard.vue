@@ -7,7 +7,9 @@ import {
   fetchDriverOrders,
   updateOrderLocation,
   updateOrderStatus,
+  uploadProof
 } from "../services/orderService";
+import { sendWhatsAppNotification } from "../services/notificationService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import { useAuthStore } from "../../auth/stores/authStore";
 
@@ -17,12 +19,55 @@ const availableOrders = ref<Order[]>([]);
 const statusUpdates = reactive<Record<string, OrderStatus>>({});
 const loading = ref(true);
 const errorMsg = ref("");
+const successMsg = ref("");
+const activeTab = ref<"active" | "history">("active");
 const showWarningModal = ref(false);
 
 const showConfirmModal = ref(false);
 const confirmTitle = ref("");
 const confirmMessage = ref("");
 const confirmAction = ref<(() => void) | (() => Promise<void>) | null>(null);
+
+const showProofModal = ref(false);
+const proofTarget = ref<string | null>(null);
+const proofFile = ref<File | null>(null);
+const uploadingProof = ref(false);
+
+const handleFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  if (target.files && target.files.length > 0) {
+    proofFile.value = target.files[0] || null;
+  }
+};
+
+const handleUploadProof = async () => {
+  if (!proofTarget.value || !proofFile.value) return;
+  
+  const orderObj = assignedOrders.value.find(o => o.id === proofTarget.value);
+  
+  uploadingProof.value = true;
+  errorMsg.value = "";
+  successMsg.value = "";
+  
+  try {
+    await uploadProof(proofTarget.value, proofFile.value);
+    showProofModal.value = false;
+    proofTarget.value = null;
+    
+    if (orderObj) {
+      await sendWhatsAppNotification(orderObj.phone, orderObj.customer_name, "selesai");
+      successMsg.value = `Pesan WhatsApp otomatis terkirim ke ${orderObj.customer_name}.`;
+    }
+    
+    await refresh();
+    
+    setTimeout(() => { successMsg.value = ""; }, 5000);
+  } catch (error) {
+    errorMsg.value = error instanceof Error ? error.message : "Gagal mengunggah foto.";
+  } finally {
+    uploadingProof.value = false;
+  }
+};
 
 const triggerConfirmation = (title: string, message: string, action: () => void | Promise<void>) => {
   confirmTitle.value = title;
@@ -43,6 +88,14 @@ const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesa
 
 const hasActiveOrder = computed(() => {
   return assignedOrders.value.some(o => o.status !== "selesai" && o.status !== "batal");
+});
+
+const activeAssigned = computed(() => {
+  return assignedOrders.value.filter(o => o.status !== "selesai" && o.status !== "batal");
+});
+
+const historyOrders = computed(() => {
+  return assignedOrders.value.filter(o => o.status === "selesai" || o.status === "batal");
 });
 
 const formatDate = (value: string | null) => {
@@ -107,12 +160,29 @@ const handleClaim = (orderId: string) => {
 const handleUpdateStatus = (orderId: string) => {
   const status = statusUpdates[orderId] ?? "dikirim";
 
+  if (status === "selesai") {
+    proofTarget.value = orderId;
+    proofFile.value = null;
+    showProofModal.value = true;
+    return;
+  }
+
   triggerConfirmation(
     "Konfirmasi Perbarui Status",
     `Apakah kamu yakin ingin memperbarui status pesanan menjadi "${status}"?`,
     async () => {
+      errorMsg.value = "";
+      successMsg.value = "";
       try {
         await updateOrderStatus(orderId, status);
+        
+        const orderObj = assignedOrders.value.find(o => o.id === orderId);
+        if (orderObj && status === "dikirim") {
+          await sendWhatsAppNotification(orderObj.phone, orderObj.customer_name, status);
+          successMsg.value = `Notifikasi WhatsApp berhasil dikirim ke ${orderObj.customer_name} (${orderObj.phone}).`;
+          setTimeout(() => { successMsg.value = ""; }, 5000);
+        }
+        
         await refresh();
       } catch (error) {
         errorMsg.value = error instanceof Error ? error.message : "Gagal update status.";
@@ -170,210 +240,311 @@ onMounted(async () => {
     </header>
 
     <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+    <p v-if="successMsg" class="success-toast">{{ successMsg }}</p>
     <p v-if="loading" class="info">Memuat data supir...</p>
 
-    <!-- ====== PESANAN KAMU (Table) ====== -->
-    <section class="card">
-      <header class="card-header">
-        <h3>Pesanan Kamu</h3>
-        <p>Pesanan yang sedang kamu tangani.</p>
-      </header>
+    <template v-else>
+      <!-- Tabs -->
+      <div class="tabs-wrapper">
+        <div class="tabs">
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'active' }"
+            @click="activeTab = 'active'"
+          >
+            Pesanan Aktif
+            <span v-if="activeAssigned.length || availableOrders.length" class="tab-count">{{ activeAssigned.length + availableOrders.length }}</span>
+          </button>
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'history' }"
+            @click="activeTab = 'history'"
+          >
+            Riwayat Pesanan
+            <span v-if="historyOrders.length" class="tab-count">{{ historyOrders.length }}</span>
+          </button>
+        </div>
+      </div>
 
-      <div v-if="assignedOrders.length === 0" class="empty">Belum ada pesanan aktif.</div>
+      <!-- ====== ACTIVE TAB ====== -->
+      <template v-if="activeTab === 'active'">
+        <!-- ====== PESANAN KAMU (Table) ====== -->
+        <section class="card">
+          <header class="card-header">
+            <h3>Pesanan Aktif</h3>
+            <p>Pesanan yang sedang kamu tangani.</p>
+          </header>
 
-      <template v-else>
-        <!-- Desktop Table -->
-        <div class="table-responsive desktop-only">
-          <table class="order-table">
-            <thead>
-              <tr>
-                <th>Pelanggan</th>
-                <th>Alamat</th>
-                <th>Volume</th>
-                <th>Jadwal</th>
-                <th>Status</th>
-                <th>Ubah Status</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="order in assignedOrders" :key="order.id">
-                <td class="cell-bold">{{ order.customer_name }}</td>
-                <td class="cell-muted" :title="order.address">{{ order.address }}</td>
-                <td>{{ order.volume }}</td>
-                <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
-                <td>
+          <div v-if="activeAssigned.length === 0" class="empty">Belum ada pesanan aktif.</div>
+
+          <template v-else>
+            <!-- Desktop Table -->
+            <div class="table-responsive desktop-only">
+              <table class="order-table">
+                <thead>
+                  <tr>
+                    <th>Pelanggan</th>
+                    <th>Alamat</th>
+                    <th>Volume</th>
+                    <th>Jadwal</th>
+                    <th>Status</th>
+                    <th>Ubah Status</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="order in activeAssigned" :key="order.id">
+                    <td class="cell-bold">{{ order.customer_name }}</td>
+                    <td class="cell-muted" :title="order.address">{{ order.address }}</td>
+                    <td>{{ order.volume }}</td>
+                    <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
+                    <td>
+                      <OrderStatusBadge :status="order.status" />
+                    </td>
+                    <td>
+                      <select v-model="statusUpdates[order.id]" class="table-select">
+                        <option v-for="status in statusOptions" :key="status" :value="status">
+                          {{ status }}
+                        </option>
+                      </select>
+                    </td>
+                    <td class="cell-actions">
+                      <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
+                        Update
+                      </button>
+                      <button class="btn-outline" @click="handleSendLocation(order.id)">
+                        Kirim Lokasi
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Mobile Cards -->
+            <div class="mobile-only">
+              <div class="mobile-cards">
+                <div v-for="order in activeAssigned" :key="order.id" class="mobile-card">
+                  <div class="mc-header">
+                    <div class="customer-info">
+                      <span class="label">Pelanggan</span>
+                      <span class="value">{{ order.customer_name }}</span>
+                    </div>
+                    <OrderStatusBadge :status="order.status" />
+                  </div>
+                  <div class="mc-body">
+                    <div class="info-row">
+                      <span class="label">Alamat</span>
+                      <span class="value address">{{ order.address }}</span>
+                    </div>
+                    <div class="info-grid">
+                      <div class="info-col">
+                        <span class="label">Volume</span>
+                        <span class="value">{{ order.volume }}</span>
+                      </div>
+                      <div class="info-col">
+                        <span class="label">Jadwal</span>
+                        <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mc-footer">
+                    <select v-model="statusUpdates[order.id]" class="table-select">
+                      <option v-for="status in statusOptions" :key="status" :value="status">
+                        {{ status }}
+                      </option>
+                    </select>
+                    <div class="mc-actions">
+                      <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
+                        Update
+                      </button>
+                      <button class="btn-outline" @click="handleSendLocation(order.id)">
+                        Kirim Lokasi
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- ====== PESANAN MENUNGGU (Table) ====== -->
+        <section class="card" v-if="availableOrders.length">
+          <header class="card-header">
+            <h3>Pesanan Menunggu</h3>
+            <p>Pesanan yang belum diambil supir.</p>
+          </header>
+
+          <p v-if="hasActiveOrder" class="warning-text">
+            Selesaikan pesanan aktif kamu sebelum mengambil pesanan baru.
+          </p>
+
+          <!-- Desktop Table -->
+          <div class="table-responsive desktop-only">
+            <table class="order-table">
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Alamat</th>
+                  <th>Volume</th>
+                  <th>Jadwal</th>
+                  <th>Catatan</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="order in availableOrders" :key="order.id">
+                  <td class="cell-bold">{{ order.customer_name }}</td>
+                  <td class="cell-muted" :title="order.address">{{ order.address }}</td>
+                  <td>{{ order.volume }}</td>
+                  <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
+                  <td class="cell-muted">{{ order.notes ?? '-' }}</td>
+                  <td>
+                    <OrderStatusBadge :status="order.status" />
+                  </td>
+                  <td class="cell-actions">
+                    <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">
+                      Detail
+                    </router-link>
+                    <button
+                      class="btn-primary"
+                      :class="{ 'btn-disabled': hasActiveOrder }"
+                      @click="handleClaim(order.id)"
+                    >
+                      Ambil
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Mobile Cards -->
+          <div class="mobile-only">
+            <div class="mobile-cards">
+              <div v-for="order in availableOrders" :key="order.id" class="mobile-card">
+                <div class="mc-header">
+                  <div class="customer-info">
+                    <span class="label">Pelanggan</span>
+                    <span class="value">{{ order.customer_name }}</span>
+                  </div>
                   <OrderStatusBadge :status="order.status" />
-                </td>
-                <td>
-                  <select v-model="statusUpdates[order.id]" class="table-select">
-                    <option v-for="status in statusOptions" :key="status" :value="status">
-                      {{ status }}
-                    </option>
-                  </select>
-                </td>
-                <td class="cell-actions">
-                  <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
-                    Update
-                  </button>
-                  <button class="btn-outline" @click="handleSendLocation(order.id)">
-                    Kirim Lokasi
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Mobile Cards -->
-        <div class="mobile-only">
-          <div class="mobile-cards">
-            <div v-for="order in assignedOrders" :key="order.id" class="mobile-card">
-              <div class="mc-header">
-                <div class="customer-info">
-                  <span class="label">Pelanggan</span>
-                  <span class="value">{{ order.customer_name }}</span>
                 </div>
-                <OrderStatusBadge :status="order.status" />
-              </div>
-              <div class="mc-body">
-                <div class="info-row">
-                  <span class="label">Alamat</span>
-                  <span class="value address">{{ order.address }}</span>
-                </div>
-                <div class="info-grid">
-                  <div class="info-col">
-                    <span class="label">Volume</span>
-                    <span class="value">{{ order.volume }}</span>
+                <div class="mc-body">
+                  <div class="info-row">
+                    <span class="label">Alamat</span>
+                    <span class="value address">{{ order.address }}</span>
                   </div>
-                  <div class="info-col">
-                    <span class="label">Jadwal</span>
-                    <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+                  <div class="info-grid">
+                    <div class="info-col">
+                      <span class="label">Volume</span>
+                      <span class="value">{{ order.volume }}</span>
+                    </div>
+                    <div class="info-col">
+                      <span class="label">Jadwal</span>
+                      <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+                    </div>
+                  </div>
+                  <div v-if="order.notes" class="info-row" style="margin-top: 8px;">
+                    <span class="label">Catatan</span>
+                    <span class="value address">{{ order.notes }}</span>
                   </div>
                 </div>
-              </div>
-              <div class="mc-footer">
-                <select v-model="statusUpdates[order.id]" class="table-select">
-                  <option v-for="status in statusOptions" :key="status" :value="status">
-                    {{ status }}
-                  </option>
-                </select>
-                <div class="mc-actions">
-                  <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
-                    Update
-                  </button>
-                  <button class="btn-outline" @click="handleSendLocation(order.id)">
-                    Kirim Lokasi
-                  </button>
+                <div class="mc-footer">
+                  <div class="mc-actions">
+                    <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail-mobile">
+                      Lihat Detail
+                    </router-link>
+                    <button
+                      class="btn-primary"
+                      :class="{ 'btn-disabled': hasActiveOrder }"
+                      @click="handleClaim(order.id)"
+                    >
+                      Ambil Pesanan
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </section>
       </template>
-    </section>
 
-    <!-- ====== PESANAN MENUNGGU (Table) ====== -->
-    <section class="card" v-if="availableOrders.length">
-      <header class="card-header">
-        <h3>Pesanan Menunggu</h3>
-        <p>Pesanan yang belum diambil supir.</p>
-      </header>
+      <!-- ====== HISTORY TAB ====== -->
+      <template v-if="activeTab === 'history'">
+        <!-- ====== RIWAYAT PESANAN ====== -->
+        <section class="card">
+          <header class="card-header">
+            <h3>Riwayat Pesanan</h3>
+            <p>Pesanan yang sudah selesai atau dibatalkan.</p>
+          </header>
 
-      <p v-if="hasActiveOrder" class="warning-text">
-        Selesaikan pesanan aktif kamu sebelum mengambil pesanan baru.
-      </p>
+          <div v-if="historyOrders.length === 0" class="empty">Belum ada riwayat pesanan.</div>
 
-      <!-- Desktop Table -->
-      <div class="table-responsive desktop-only">
-        <table class="order-table">
-          <thead>
-            <tr>
-              <th>Pelanggan</th>
-              <th>Alamat</th>
-              <th>Volume</th>
-              <th>Jadwal</th>
-              <th>Catatan</th>
-              <th>Status</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="order in availableOrders" :key="order.id">
-              <td class="cell-bold">{{ order.customer_name }}</td>
-              <td class="cell-muted" :title="order.address">{{ order.address }}</td>
-              <td>{{ order.volume }}</td>
-              <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
-              <td class="cell-muted">{{ order.notes ?? '-' }}</td>
-              <td>
-                <OrderStatusBadge :status="order.status" />
-              </td>
-              <td class="cell-actions">
-                <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">
-                  Detail
-                </router-link>
-                <button
-                  class="btn-primary"
-                  :class="{ 'btn-disabled': hasActiveOrder }"
-                  @click="handleClaim(order.id)"
-                >
-                  Ambil
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Mobile Cards -->
-      <div class="mobile-only">
-        <div class="mobile-cards">
-          <div v-for="order in availableOrders" :key="order.id" class="mobile-card">
-            <div class="mc-header">
-              <div class="customer-info">
-                <span class="label">Pelanggan</span>
-                <span class="value">{{ order.customer_name }}</span>
-              </div>
-              <OrderStatusBadge :status="order.status" />
+          <template v-else>
+            <!-- Desktop Table -->
+            <div class="table-responsive desktop-only">
+              <table class="order-table">
+                <thead>
+                  <tr>
+                    <th>Pelanggan</th>
+                    <th>Alamat</th>
+                    <th>Volume</th>
+                    <th>Jadwal</th>
+                    <th>Status</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="order in historyOrders" :key="order.id">
+                    <td class="cell-bold">{{ order.customer_name }}</td>
+                    <td class="cell-muted" :title="order.address">{{ order.address }}</td>
+                    <td>{{ order.volume }}</td>
+                    <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
+                    <td><OrderStatusBadge :status="order.status" /></td>
+                    <td>
+                      <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">Detail</router-link>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="mc-body">
-              <div class="info-row">
-                <span class="label">Alamat</span>
-                <span class="value address">{{ order.address }}</span>
-              </div>
-              <div class="info-grid">
-                <div class="info-col">
-                  <span class="label">Volume</span>
-                  <span class="value">{{ order.volume }}</span>
-                </div>
-                <div class="info-col">
-                  <span class="label">Jadwal</span>
-                  <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+
+            <!-- Mobile Cards -->
+            <div class="mobile-only">
+              <div class="mobile-cards">
+                <div v-for="order in historyOrders" :key="order.id" class="mobile-card">
+                  <div class="mc-header">
+                    <div class="customer-info">
+                      <span class="label">Pelanggan</span>
+                      <span class="value">{{ order.customer_name }}</span>
+                    </div>
+                    <OrderStatusBadge :status="order.status" />
+                  </div>
+                  <div class="mc-body">
+                    <div class="info-grid">
+                      <div class="info-col">
+                        <span class="label">Volume</span>
+                        <span class="value">{{ order.volume }}</span>
+                      </div>
+                      <div class="info-col">
+                        <span class="label">Jadwal</span>
+                        <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mc-footer">
+                    <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail-mobile">Lihat Detail</router-link>
+                  </div>
                 </div>
               </div>
-              <div v-if="order.notes" class="info-row" style="margin-top: 8px;">
-                <span class="label">Catatan</span>
-                <span class="value address">{{ order.notes }}</span>
-              </div>
             </div>
-            <div class="mc-footer">
-              <div class="mc-actions">
-                <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail-mobile">
-                  Lihat Detail
-                </router-link>
-                <button
-                  class="btn-primary"
-                  :class="{ 'btn-disabled': hasActiveOrder }"
-                  @click="handleClaim(order.id)"
-                >
-                  Ambil Pesanan
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+          </template>
+        </section>
+      </template>
+    </template>
 
     <!-- Custom Warning Modal -->
     <div v-if="showWarningModal" class="modal-backdrop" @click.self="showWarningModal = false">
@@ -419,6 +590,26 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <!-- Proof Upload Modal -->
+    <div v-if="showProofModal" class="modal-backdrop" @click.self="showProofModal = false">
+      <div class="modal-content">
+        <h3>Upload Bukti Pengiriman</h3>
+        <p class="modal-body-text" style="margin-bottom: 16px;">Pesanan selesai membutuhkan foto bukti pengiriman ke pelanggan.</p>
+        <form @submit.prevent="handleUploadProof" class="modal-form">
+          <label class="field">
+            <span>Ambil Foto / Pilih Galeri</span>
+            <input type="file" accept="image/*" capture="environment" @change="handleFileChange" required />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn-outline" @click="showProofModal = false">Batal</button>
+            <button type="submit" class="btn-primary" :disabled="uploadingProof">
+              {{ uploadingProof ? "Mengunggah..." : "Upload & Selesai" }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -426,6 +617,67 @@ onMounted(async () => {
 .dashboard {
   display: grid;
   gap: 20px;
+}
+
+.tabs-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #fff;
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.tab-btn.active {
+  background: #0f172a;
+  color: #fff;
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.tab-btn:not(.active) .tab-count {
+  background: #e2e8f0;
+  color: #475569;
 }
 
 .section-header h2 {
@@ -740,6 +992,25 @@ onMounted(async () => {
 
 .error {
   color: #dc2626;
+  background: #fef2f2;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.success-toast {
+  color: #16a34a;
+  background: #f0fdf4;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-weight: 500;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .info {

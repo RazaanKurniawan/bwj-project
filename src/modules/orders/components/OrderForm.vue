@@ -17,9 +17,41 @@ const name = ref(props.customerName ?? "");
 const phone = ref(props.customerPhone ?? "");
 const address = ref("");
 const scheduleAt = ref("");
-const volume = ref("5000 Liter");
-const truckCount = ref(1);
+const volume = ref("8000 Liter");
+const truckCount = ref<number | string>(1);
 const notes = ref("");
+
+const gettingLocation = ref(false);
+const locError = ref("");
+const locSuccess = ref(false);
+const customerLat = ref<number | null>(null);
+const customerLng = ref<number | null>(null);
+
+const handleGetLocation = () => {
+  if (!("geolocation" in navigator)) {
+    locError.value = "Browser kamu tidak mendukung GPS.";
+    return;
+  }
+  
+  gettingLocation.value = true;
+  locError.value = "";
+  locSuccess.value = false;
+  
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      customerLat.value = pos.coords.latitude;
+      customerLng.value = pos.coords.longitude;
+      locSuccess.value = true;
+      gettingLocation.value = false;
+    },
+    (err) => {
+      locError.value = "Gagal mendeteksi lokasi: " + err.message;
+      gettingLocation.value = false;
+    },
+    { enableHighAccuracy: true }
+  );
+};
+
 const loading = ref(false);
 const errorMsg = ref("");
 
@@ -58,12 +90,20 @@ const handleSubmit = async () => {
         assigned_driver_id: null,
         lat: null,
         lng: null,
+        customer_lat: customerLat.value,
+        customer_lng: customerLng.value,
         accuracy: null,
+        proof_url: null,
+        rating: null,
+        review: null,
       });
       newOrders.push(order);
     }
 
     resetForm();
+    customerLat.value = null;
+    customerLng.value = null;
+    locSuccess.value = false;
     emit("created", newOrders);
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : "Gagal membuat pesanan.";
@@ -90,9 +130,20 @@ const handleSubmit = async () => {
         <input v-model="phone" type="tel" required />
       </label>
       <label class="field">
-        <span>Alamat</span>
-        <textarea v-model="address" rows="3" required></textarea>
+        <span>Alamat Lengkap</span>
+        <textarea v-model="address" rows="3" placeholder="Tuliskan alamat lengkap dengan patokan" required></textarea>
       </label>
+
+      <div class="field loc-field">
+        <span>Pin Lokasi Peta (Opsional namun disarankan)</span>
+        <button type="button" class="btn-outline" @click="handleGetLocation" :disabled="gettingLocation">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+          {{ gettingLocation ? "Mendeteksi..." : (locSuccess ? "Lokasi Berhasil Dipin" : "Deteksi Lokasi Saya") }}
+        </button>
+        <p v-if="locError" class="error-sm">{{ locError }}</p>
+        <p v-if="locSuccess" class="success-sm">Akurasi routing peta untuk supir akan meningkat!</p>
+      </div>
+
       <label class="field">
         <span>Jadwal</span>
         <input v-model="scheduleAt" type="datetime-local" />
@@ -188,6 +239,48 @@ header p {
 .btn-primary:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.btn-outline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 8px;
+  padding: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.btn-outline:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.loc-field {
+  background: #f1f5f9;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+}
+
+.error-sm {
+  color: #dc2626;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.success-sm {
+  color: #16a34a;
+  font-size: 12px;
+  margin: 4px 0 0;
 }
 
 .row-fields {

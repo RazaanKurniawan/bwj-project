@@ -12,20 +12,27 @@ const orders = ref<Order[]>([]);
 const loading = ref(true);
 const errorMsg = ref("");
 const selectedStatus = ref("all");
+const activeTab = ref<"active" | "history">("active");
 
 const userId = computed(() => authStore.user.value?.id ?? null);
 const customerName = computed(() => authStore.profile.value?.name ?? null);
 const customerPhone = computed(() => authStore.profile.value?.phone ?? null);
 
 const activeOrders = computed(() => {
-  return orders.value.filter(o => o.status === 'diproses' || o.status === 'dikirim');
+  return orders.value.filter(o => o.status !== "selesai" && o.status !== "batal");
+});
+
+const trackableOrders = computed(() => {
+  return orders.value.filter(o => o.status === "diproses" || o.status === "dikirim");
+});
+
+const historyOrders = computed(() => {
+  return orders.value.filter(o => o.status === "selesai" || o.status === "batal");
 });
 
 const loadOrders = async () => {
   const uid = userId.value;
-  if (!uid) {
-    return;
-  }
+  if (!uid) return;
 
   loading.value = true;
   errorMsg.value = "";
@@ -63,21 +70,59 @@ onMounted(async () => {
     <p v-if="loading" class="info">Memuat pesanan...</p>
 
     <template v-else>
-      <MultiOrderMap v-if="activeOrders.length > 0" :orders="activeOrders" />
-      
-      <div class="filter-wrapper">
-        <label for="status-filter">Filter Status:</label>
-        <select id="status-filter" v-model="selectedStatus" @change="loadOrders">
-          <option value="all">Semua Status</option>
-          <option value="menunggu">Menunggu</option>
-          <option value="diproses">Diproses</option>
-          <option value="dikirim">Dikirim</option>
-          <option value="selesai">Selesai</option>
-          <option value="batal">Batal</option>
-        </select>
+      <MultiOrderMap v-if="trackableOrders.length > 0" :orders="trackableOrders" />
+
+      <!-- Tabs -->
+      <div class="tabs-wrapper">
+        <div class="tabs">
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'active' }"
+            @click="activeTab = 'active'"
+          >
+            Pesanan Aktif
+            <span v-if="activeOrders.length" class="tab-count">{{ activeOrders.length }}</span>
+          </button>
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'history' }"
+            @click="activeTab = 'history'"
+          >
+            Riwayat Pesanan
+            <span v-if="historyOrders.length" class="tab-count">{{ historyOrders.length }}</span>
+          </button>
+        </div>
+
+        <div class="filter-inline">
+          <label for="status-filter">Filter:</label>
+          <select id="status-filter" v-model="selectedStatus" @change="loadOrders">
+            <option value="all">Semua</option>
+            <option value="menunggu">Menunggu</option>
+            <option value="diproses">Diproses</option>
+            <option value="dikirim">Dikirim</option>
+            <option value="selesai">Selesai</option>
+            <option value="batal">Batal</option>
+          </select>
+        </div>
       </div>
 
-      <OrderList :orders="orders" />
+      <!-- Active Orders -->
+      <template v-if="activeTab === 'active'">
+        <OrderList
+          :orders="activeOrders"
+          title="Pesanan Aktif"
+          empty-text="Tidak ada pesanan aktif."
+        />
+      </template>
+
+      <!-- History -->
+      <template v-if="activeTab === 'history'">
+        <OrderList
+          :orders="historyOrders"
+          title="Riwayat Pesanan"
+          empty-text="Belum ada riwayat pesanan."
+        />
+      </template>
     </template>
   </div>
 </template>
@@ -88,26 +133,81 @@ onMounted(async () => {
   gap: 20px;
 }
 
-.filter-wrapper {
+.tabs-wrapper {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
   background: #fff;
-  padding: 12px 18px;
+  padding: 8px 16px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
-.filter-wrapper label {
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.tab-btn.active {
+  background: #0f172a;
+  color: #fff;
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.tab-btn:not(.active) .tab-count {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.filter-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-inline label {
   font-size: 13px;
   font-weight: 600;
   color: #475569;
 }
 
-.filter-wrapper select {
-  padding: 8px 12px;
+.filter-inline select {
+  padding: 6px 10px;
   font-size: 13px;
   border-radius: 8px;
   border: 1px solid #cbd5e1;
@@ -115,11 +215,10 @@ onMounted(async () => {
   outline: none;
   background: #fff;
   cursor: pointer;
-  min-width: 140px;
   transition: border-color 0.2s;
 }
 
-.filter-wrapper select:focus {
+.filter-inline select:focus {
   border-color: #0f172a;
 }
 

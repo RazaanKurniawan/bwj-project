@@ -168,7 +168,7 @@ onMounted(() => {
 }
 
 .app-content {
-  max-width: 980px;
+  max-width: 1200px;
   margin: 24px auto 0;
   padding: 0 24px 48px;
 }

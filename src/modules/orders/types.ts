@@ -15,6 +15,11 @@ export type Order = {
   lat: number | null;
   lng: number | null;
   accuracy: number | null;
+  customer_lat: number | null;
+  customer_lng: number | null;
+  proof_url: string | null;
+  rating: number | null;
+  review: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,7 +1,7 @@
 import { supabase } from "../../core/supabaseClient";
 import type { Profile } from "../types";
 
-const PROFILE_FIELDS = "id, name, phone, role";
+const PROFILE_FIELDS = "id, name, email, phone, role";
 
 export const fetchProfile = async (userId: string) => {
   const { data, error } = await supabase
@@ -47,4 +47,52 @@ export const fetchDrivers = async () => {
   }
 
   return (data ?? []) as Profile[];
+};
+
+export const fetchAllProfiles = async () => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(PROFILE_FIELDS)
+    .order("name", { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as Profile[];
+};
+
+export const updateProfile = async (userId: string, patch: Partial<Omit<Profile, "id">>) => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(patch)
+    .eq("id", userId)
+    .select(PROFILE_FIELDS)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Gagal update profil: user tidak ditemukan.");
+  }
+
+  return data as Profile;
+};
+
+export const deleteProfile = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .delete()
+    .eq("id", userId)
+    .select("id");
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error("Gagal menghapus: Akses ditolak (RLS Policy), atau user tidak ditemukan.");
+  }
 };

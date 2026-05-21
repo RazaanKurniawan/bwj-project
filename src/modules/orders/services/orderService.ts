@@ -132,6 +132,41 @@ export const claimOrder = (orderId: string, driverId: string) => {
   return updateOrder(orderId, { assigned_driver_id: driverId, status: "dikirim" });
 };
 
+export const deleteOrder = async (orderId: string) => {
+  const { data, error } = await supabase
+    .from("orders")
+    .delete()
+    .eq("id", orderId)
+    .select("id");
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error("Gagal menghapus: Akses ditolak oleh database (RLS Policy), atau pesanan tidak ditemukan.");
+  }
+};
+
+export const uploadProof = async (orderId: string, file: File) => {
+  const fileExt = file.name.split('.').pop();
+  const filePath = `${orderId}-${Date.now()}.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('proofs')
+    .upload(filePath, file, { upsert: true });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from('proofs').getPublicUrl(filePath);
+  
+  return updateOrder(orderId, { proof_url: data.publicUrl, status: 'selesai' });
+};
+
+export const submitReview = (orderId: string, rating: number, review: string | null) => {
+  return updateOrder(orderId, { rating, review });
+};
+
 export const subscribeOrder = (orderId: string, handler: (order: Order) => void) => {
   const channel = supabase
     .channel(`order-${orderId}`)

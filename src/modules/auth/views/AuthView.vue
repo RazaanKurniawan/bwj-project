@@ -70,7 +70,11 @@ const handleSignup = async () => {
   errorMsg.value = "";
   infoMsg.value = "";
 
-  const { data, error } = await signUpWithEmail(email.value, password.value);
+  const { data, error } = await signUpWithEmail(email.value, password.value, {
+    name: name.value || undefined,
+    phone: phone.value || undefined,
+    role: role.value,
+  });
 
   if (error) {
     errorMsg.value = error.message;
@@ -83,6 +87,7 @@ const handleSignup = async () => {
       await upsertProfile({
         id: data.user.id,
         name: name.value || null,
+        email: email.value,
         phone: phone.value || null,
         role: role.value,
       });
@@ -133,13 +138,6 @@ const handleSubmit = async () => {
           <label class="field">
             <span>No HP</span>
             <input v-model="phone" type="tel" placeholder="08xxxxxxxxxx" />
-          </label>
-          <label class="field">
-            <span>Role</span>
-            <select v-model="role">
-              <option value="customer">Customer</option>
-              <option value="driver">Supir</option>
-            </select>
           </label>
         </div>
 
