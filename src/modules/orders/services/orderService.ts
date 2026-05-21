@@ -21,12 +21,17 @@ export const createOrder = async (payload: NewOrder) => {
   return data as Order;
 };
 
-export const fetchCustomerOrders = async (customerId: string) => {
-  const { data, error } = await supabase
+export const fetchCustomerOrders = async (customerId: string, status?: string) => {
+  let query = supabase
     .from("orders")
     .select(ORDER_FIELDS)
-    .eq("customer_id", customerId)
-    .order("created_at", { ascending: false });
+    .eq("customer_id", customerId);
+
+  if (status && status !== "all") {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) {
     throw error;

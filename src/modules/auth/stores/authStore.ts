@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import type { Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase } from "../../core/supabaseClient";
 import type { Profile } from "../types";
 import { fetchProfile } from "../services/profileService";
@@ -12,6 +12,9 @@ let initialized = false;
 let authListenerReady = false;
 let initPromise: Promise<void> | null = null;
 
+/** Callbacks registered via onSessionExpired() */
+const sessionExpiredCallbacks: Array<() => void> = [];
+
 const loadProfile = async (userId: string) => {
   try {
     profile.value = await fetchProfile(userId);
@@ -19,6 +22,17 @@ const loadProfile = async (userId: string) => {
     console.error("Failed to load profile", error);
     profile.value = null;
   }
+};
+
+const clearSession = () => {
+  session.value = null;
+  profile.value = null;
+  initialized = false;
+  initPromise = null;
+};
+
+const notifySessionExpired = () => {
+  sessionExpiredCallbacks.forEach((cb) => cb());
 };
 
 const updateSession = async (newSession: Session | null) => {
@@ -33,6 +47,24 @@ const updateSession = async (newSession: Session | null) => {
   }
 };
 
+const handleAuthEvent = async (event: AuthChangeEvent, newSession: Session | null) => {
+  // Session expired or user signed out
+  if (event === "SIGNED_OUT") {
+    clearSession();
+    notifySessionExpired();
+    return;
+  }
+
+  // Token refresh failed — session is gone
+  if (event === "TOKEN_REFRESHED" && !newSession) {
+    clearSession();
+    notifySessionExpired();
+    return;
+  }
+
+  await updateSession(newSession ?? null);
+};
+
 const initAuth = async () => {
   if (initialized && initPromise) {
     return initPromise;
@@ -42,12 +74,21 @@ const initAuth = async () => {
   loading.value = true;
 
   initPromise = (async () => {
-    const { data } = await supabase.auth.getSession();
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) {
+      console.warn("Session retrieval failed:", error.message);
+      clearSession();
+      notifySessionExpired();
+      loading.value = false;
+      return;
+    }
+
     await updateSession(data.session ?? null);
 
     if (!authListenerReady) {
-      supabase.auth.onAuthStateChange(async (_event, newSession) => {
-        await updateSession(newSession ?? null);
+      supabase.auth.onAuthStateChange(async (event, newSession) => {
+        await handleAuthEvent(event, newSession);
       });
       authListenerReady = true;
     }
@@ -58,6 +99,14 @@ const initAuth = async () => {
   return initPromise;
 };
 
+/**
+ * Register a callback to be called when the session expires.
+ * Typically used in App.vue to redirect to the login page.
+ */
+const onSessionExpired = (callback: () => void) => {
+  sessionExpiredCallbacks.push(callback);
+};
+
 export const useAuthStore = () => {
   return {
     session,
@@ -66,5 +115,7 @@ export const useAuthStore = () => {
     user: computed(() => session.value?.user ?? null),
     initAuth,
     updateSession,
+    clearSession,
+    onSessionExpired,
   };
 };

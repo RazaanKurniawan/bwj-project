@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
 import OrderStatusBadge from "./OrderStatusBadge.vue";
+import MobileOrderList from "./MobileOrderList.vue";
 import type { Order } from "../types";
 
 defineProps<{
@@ -29,22 +30,42 @@ const formatDate = (value: string | null) => {
       {{ emptyText ?? "Belum ada pesanan." }}
     </div>
 
-    <ul v-else class="order-list">
-      <li v-for="order in orders" :key="order.id" class="order-item">
-        <div class="order-main">
-          <div>
-            <h3>{{ order.customer_name }}</h3>
-            <p>{{ order.address }}</p>
-          </div>
-          <OrderStatusBadge :status="order.status" />
-        </div>
-        <div class="order-meta">
-          <span>Jadwal: {{ formatDate(order.schedule_at) }}</span>
-          <span>Volume: {{ order.volume }}</span>
-          <RouterLink class="link" :to="`/orders/${order.id}`">Detail</RouterLink>
-        </div>
-      </li>
-    </ul>
+    <template v-else>
+      <!-- Desktop Table View -->
+      <div class="table-responsive desktop-only">
+        <table class="order-table">
+          <thead>
+            <tr>
+              <th>Pelanggan</th>
+              <th>Alamat</th>
+              <th>Volume</th>
+              <th>Jadwal</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="order in orders" :key="order.id">
+              <td class="cell-bold">{{ order.customer_name }}</td>
+              <td class="cell-muted" :title="order.address">{{ order.address }}</td>
+              <td>{{ order.volume }}</td>
+              <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
+              <td>
+                <OrderStatusBadge :status="order.status" />
+              </td>
+              <td>
+                <RouterLink class="btn-detail" :to="`/orders/${order.id}`">Detail</RouterLink>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile List View -->
+      <div class="mobile-only">
+        <MobileOrderList :orders="orders" :empty-text="emptyText" />
+      </div>
+    </template>
   </section>
 </template>
 
@@ -72,51 +93,96 @@ const formatDate = (value: string | null) => {
   color: #64748b;
 }
 
-.order-list {
-  list-style: none;
-  padding: 0;
-  margin: 16px 0 0;
-  display: grid;
-  gap: 12px;
-}
-
-.order-item {
-  border: 1px solid #e2e8f0;
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
   border-radius: 12px;
-  padding: 14px;
+  border: 1px solid #e2e8f0;
+  margin-top: 16px;
+}
+
+.order-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.order-table th {
   background: #f8fafc;
-  display: grid;
-  gap: 10px;
-}
-
-.order-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.order-main h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.order-main p {
-  margin: 6px 0 0;
   color: #475569;
+  font-weight: 600;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
 }
 
-.order-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 13px;
+.order-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.order-table tr:last-child td {
+  border-bottom: none;
+}
+
+.order-table tr:hover td {
+  background: #f8fafc;
+}
+
+.cell-bold {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.cell-muted {
   color: #64748b;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.link {
+.cell-date {
+  color: #475569;
+  font-size: 13px;
+}
+
+.btn-detail {
+  display: inline-block;
   color: #1d4ed8;
   font-weight: 600;
   text-decoration: none;
+  background: #eff6ff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-detail:hover {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* Responsiveness helper styles */
+.desktop-only {
+  display: block;
+}
+
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .desktop-only {
+    display: none;
+  }
+  .mobile-only {
+    display: block;
+  }
 }
 </style>

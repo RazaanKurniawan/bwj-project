@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, watch } from "vue";
 import { RouterLink, RouterView, useRouter } from "vue-router";
 import { signOut } from "./modules/auth/services/authService";
 import { useAuthStore } from "./modules/auth/stores/authStore";
@@ -18,9 +18,30 @@ const displayName = computed(() => {
 
 const handleLogout = async () => {
   await signOut();
-  await authStore.updateSession(null);
+  authStore.clearSession();
   await router.replace("/login");
 };
+
+// Redirect to login when session expires (detected by Supabase auth listener)
+authStore.onSessionExpired(() => {
+  const currentPath = router.currentRoute.value.fullPath;
+  if (currentPath !== "/login") {
+    router.replace({ path: "/login", query: { redirect: currentPath } });
+  }
+});
+
+// Also watch for user becoming null (e.g. session expired mid-use)
+watch(
+  () => authStore.user.value,
+  (newUser, oldUser) => {
+    if (oldUser && !newUser) {
+      const currentPath = router.currentRoute.value.fullPath;
+      if (currentPath !== "/login") {
+        router.replace({ path: "/login", query: { redirect: currentPath } });
+      }
+    }
+  }
+);
 
 onMounted(() => {
   void authStore.initAuth();
