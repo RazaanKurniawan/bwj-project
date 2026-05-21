@@ -50,7 +50,7 @@ const handleLogin = async () => {
   errorMsg.value = "";
   infoMsg.value = "";
 
-  const { error } = await signInWithEmail(email.value, password.value);
+  const { data, error } = await signInWithEmail(email.value, password.value);
 
   if (error) {
     errorMsg.value = error.message;
@@ -58,7 +58,9 @@ const handleLogin = async () => {
     return;
   }
 
-  await authStore.initAuth();
+  if (data.session) {
+    await authStore.updateSession(data.session);
+  }
   loading.value = false;
   await router.replace(redirectTo.value);
 };
@@ -91,7 +93,9 @@ const handleSignup = async () => {
     }
   }
 
-  await authStore.initAuth();
+  if (data.session) {
+    await authStore.updateSession(data.session);
+  }
 
   if (!data.session) {
     infoMsg.value = "Akun dibuat. Silakan cek email untuk verifikasi.";

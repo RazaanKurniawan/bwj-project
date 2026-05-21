@@ -18,7 +18,7 @@ const displayName = computed(() => {
 
 const handleLogout = async () => {
   await signOut();
-  await authStore.initAuth();
+  await authStore.updateSession(null);
   await router.replace("/login");
 };
 

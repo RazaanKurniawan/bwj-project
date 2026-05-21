@@ -57,6 +57,12 @@ router.beforeEach(async (to) => {
   const role = authStore.profile.value?.role ?? "customer";
 
   if (allowedRoles && !allowedRoles.includes(role)) {
+    if (role === "driver") {
+      return { path: "/driver" };
+    }
+    if (role === "admin") {
+      return { path: "/admin" };
+    }
     return { path: "/customer" };
   }
 
