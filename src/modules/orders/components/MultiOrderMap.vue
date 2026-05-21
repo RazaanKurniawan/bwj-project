@@ -46,14 +46,15 @@ const updateMarker = (data: Order | null) => {
 
   const position: [number, number] = [data.lat, data.lng];
 
-  if (!markers.value[data.id]) {
+  const existingMarker = markers.value[data.id];
+  if (!existingMarker) {
     markers.value[data.id] = L.marker(position, { icon: markerIcon })
       .addTo(map.value)
       .bindPopup(`<b>${data.notes || 'Truk'}</b><br>Status: ${data.status}`);
   } else {
-    markers.value[data.id].setLatLng(position);
-    markers.value[data.id].setIcon(markerIcon);
-    markers.value[data.id].setPopupContent(`<b>${data.notes || 'Truk'}</b><br>Status: ${data.status}`);
+    existingMarker.setLatLng(position);
+    existingMarker.setIcon(markerIcon);
+    existingMarker.setPopupContent(`<b>${data.notes || 'Truk'}</b><br>Status: ${data.status}`);
   }
 
   if (autoFollow.value) {
