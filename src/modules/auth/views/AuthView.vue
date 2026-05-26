@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { signInWithEmail, signUpWithEmail } from "../services/authService";
-import { upsertProfile } from "../services/profileService";
 import { useAuthStore } from "../stores/authStore";
 import type { UserRole } from "../types";
 
@@ -80,22 +79,6 @@ const handleSignup = async () => {
     errorMsg.value = error.message;
     loading.value = false;
     return;
-  }
-
-  if (data.user) {
-    try {
-      await upsertProfile({
-        id: data.user.id,
-        name: name.value || null,
-        email: email.value,
-        phone: phone.value || null,
-        role: role.value,
-      });
-    } catch (error) {
-      errorMsg.value = error instanceof Error ? error.message : "Gagal menyimpan profil.";
-      loading.value = false;
-      return;
-    }
   }
 
   if (data.session) {

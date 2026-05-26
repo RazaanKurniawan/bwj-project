@@ -82,17 +82,12 @@ const handleCreate = async () => {
   creating.value = true;
   errorMsg.value = "";
   try {
-    const { data, error } = await signUpWithEmail(createForm.email, createForm.password);
+    const { data, error } = await signUpWithEmail(createForm.email, createForm.password, {
+      name: createForm.name || undefined,
+      phone: createForm.phone || undefined,
+      role: createForm.role,
+    });
     if (error) throw error;
-    if (data.user) {
-      await upsertProfile({
-        id: data.user.id,
-        name: createForm.name || null,
-        email: createForm.email,
-        phone: createForm.phone || null,
-        role: createForm.role,
-      });
-    }
     showCreateModal.value = false;
     successMsg.value = "User berhasil dibuat.";
     setTimeout(() => (successMsg.value = ""), 3000);
