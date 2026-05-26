@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, shallowRef } from "vue";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import type { Order } from "../types";
 import { createOrder } from "../services/orderService";
 
@@ -27,6 +29,55 @@ const locSuccess = ref(false);
 const customerLat = ref<number | null>(null);
 const customerLng = ref<number | null>(null);
 
+const mapEl = ref<HTMLDivElement | null>(null);
+const map = shallowRef<L.Map | null>(null);
+const marker = shallowRef<L.Marker | null>(null);
+
+const initMap = () => {
+  if (!mapEl.value) return;
+  const initialPos: [number, number] = [-6.200000, 106.816666]; // Default: Jakarta
+
+  const mapInstance = L.map(mapEl.value).setView(initialPos, 12);
+  map.value = mapInstance;
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "(c) OpenStreetMap",
+  }).addTo(mapInstance);
+
+  const customerIcon = L.divIcon({
+    html: `<div style="background:#dc2626; width:20px; height:20px; border-radius:50%; border:3px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);"></div>`,
+    className: 'customer-pin',
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
+  });
+
+  marker.value = L.marker(initialPos, { icon: customerIcon, draggable: true })
+    .addTo(mapInstance)
+    .bindPopup("Geser pin ini ke lokasi tepat rumahmu.")
+    .openPopup();
+
+  marker.value.on("dragend", () => {
+    const pos = marker.value?.getLatLng();
+    if (pos) {
+      customerLat.value = pos.lat;
+      customerLng.value = pos.lng;
+      locSuccess.value = true;
+    }
+  });
+
+  mapInstance.on("click", (e: L.LeafletMouseEvent) => {
+    marker.value?.setLatLng(e.latlng);
+    customerLat.value = e.latlng.lat;
+    customerLng.value = e.latlng.lng;
+    locSuccess.value = true;
+  });
+};
+
+onMounted(() => {
+  setTimeout(() => initMap(), 100);
+});
+
 const handleGetLocation = () => {
   if (!("geolocation" in navigator)) {
     locError.value = "Browser kamu tidak mendukung GPS.";
@@ -43,6 +94,12 @@ const handleGetLocation = () => {
       customerLng.value = pos.coords.longitude;
       locSuccess.value = true;
       gettingLocation.value = false;
+      
+      if (map.value && marker.value) {
+        const latlng: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        map.value.setView(latlng, 16);
+        marker.value.setLatLng(latlng);
+      }
     },
     (err) => {
       locError.value = "Gagal mendeteksi lokasi: " + err.message;
@@ -66,6 +123,12 @@ const resetForm = () => {
 const handleSubmit = async () => {
   loading.value = true;
   errorMsg.value = "";
+
+  if (customerLat.value === null || customerLng.value === null) {
+    errorMsg.value = "Titik lokasi peta wajib ditentukan! Silakan klik 'Deteksi Lokasi Saya' atau klik area pada peta.";
+    loading.value = false;
+    return;
+  }
 
   const schedule = scheduleAt.value ? new Date(scheduleAt.value).toISOString() : null;
   const count = Number(truckCount.value);
@@ -135,8 +198,11 @@ const handleSubmit = async () => {
       </label>
 
       <div class="field loc-field">
-        <span>Pin Lokasi Peta (Opsional namun disarankan)</span>
-        <button type="button" class="btn-outline" @click="handleGetLocation" :disabled="gettingLocation">
+        <span>Pin Lokasi Peta (Wajib)</span>
+        <div class="map-picker-wrapper">
+          <div ref="mapEl" class="map-picker"></div>
+        </div>
+        <button type="button" class="btn-outline" @click="handleGetLocation" :disabled="gettingLocation" style="margin-top: 10px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
           {{ gettingLocation ? "Mendeteksi..." : (locSuccess ? "Lokasi Berhasil Dipin" : "Deteksi Lokasi Saya") }}
         </button>
@@ -269,6 +335,20 @@ header p {
   padding: 12px;
   border-radius: 12px;
   border: 1px dashed #cbd5e1;
+}
+
+.map-picker-wrapper {
+  height: 200px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  margin-top: 6px;
+}
+
+.map-picker {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 
 .error-sm {

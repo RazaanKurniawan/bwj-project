@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, reactive } from "vue";
+import { onMounted, ref, reactive, watch } from "vue";
+import { debounce } from "lodash-es";
 import type { Profile, UserRole } from "../types";
-import { fetchAllProfiles, upsertProfile, updateProfile, deleteProfile } from "../services/profileService";
+import { fetchProfilesPaginated, upsertProfile, updateProfile, deleteProfile } from "../services/profileService";
 import { signUpWithEmail } from "../services/authService";
 
 const profiles = ref<Profile[]>([]);
@@ -24,17 +25,42 @@ const showDeleteModal = ref(false);
 const deleteTarget = ref<Profile | null>(null);
 const deleting = ref(false);
 
+const tableFilters = reactive({ name: "", email: "", phone: "", role: "all" });
+const currentPage = ref(1);
+const limit = ref(10);
+const totalCount = ref(0);
+const totalPages = ref(1);
+
 const loadProfiles = async () => {
   loading.value = true;
   errorMsg.value = "";
   try {
-    profiles.value = await fetchAllProfiles();
+    const res = await fetchProfilesPaginated(currentPage.value, limit.value, {
+      name: tableFilters.name || undefined,
+      email: tableFilters.email || undefined,
+      phone: tableFilters.phone || undefined,
+      role: tableFilters.role !== "all" ? tableFilters.role : undefined,
+    });
+    profiles.value = res.data;
+    totalCount.value = res.count;
+    totalPages.value = Math.ceil(res.count / limit.value) || 1;
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : "Gagal memuat data user.";
   } finally {
     loading.value = false;
   }
 };
+
+const debouncedFetch = debounce(() => {
+  currentPage.value = 1;
+  loadProfiles();
+}, 500);
+
+watch(tableFilters, () => debouncedFetch(), { deep: true });
+watch(limit, () => { currentPage.value = 1; loadProfiles(); });
+
+const prevPage = () => { if (currentPage.value > 1) { currentPage.value--; loadProfiles(); } };
+const nextPage = () => { if (currentPage.value < totalPages.value) { currentPage.value++; loadProfiles(); } };
 
 const roleBadgeClass = (role: UserRole) => `role-${role}`;
 
@@ -148,8 +174,7 @@ onMounted(loadProfiles);
     <p v-if="loading" class="info">Memuat data user...</p>
 
     <section v-else class="card">
-      <div v-if="profiles.length === 0" class="empty">Belum ada user.</div>
-      <div v-else class="table-responsive">
+      <div class="table-responsive">
         <table class="data-table">
           <thead>
             <tr>
@@ -159,20 +184,55 @@ onMounted(loadProfiles);
               <th>Role</th>
               <th>Aksi</th>
             </tr>
+            <tr class="filter-row">
+              <th><input type="text" v-model="tableFilters.name" placeholder="Cari Nama..." /></th>
+              <th><input type="text" v-model="tableFilters.email" placeholder="Cari Email..." /></th>
+              <th><input type="text" v-model="tableFilters.phone" placeholder="Cari HP..." /></th>
+              <th>
+                <select v-model="tableFilters.role" class="filter-select">
+                  <option value="all">Semua Role</option>
+                  <option value="customer">Customer</option>
+                  <option value="driver">Driver</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </th>
+              <th></th>
+            </tr>
           </thead>
           <tbody>
-            <tr v-for="p in profiles" :key="p.id">
-              <td class="cell-bold">{{ p.name ?? "-" }}</td>
-              <td>{{ p.email ?? "-" }}</td>
-              <td>{{ p.phone ?? "-" }}</td>
-              <td><span class="role-badge" :class="roleBadgeClass(p.role)">{{ p.role }}</span></td>
-              <td class="cell-actions">
-                <button class="btn-sm btn-outline" @click="openEdit(p)">Edit</button>
-                <button class="btn-sm btn-danger" @click="openDelete(p)">Hapus</button>
-              </td>
+            <tr v-if="profiles.length === 0">
+              <td colspan="5" class="empty-table-cell">Belum ada user.</td>
             </tr>
+            <template v-else>
+              <tr v-for="p in profiles" :key="p.id">
+                <td class="cell-bold">{{ p.name ?? "-" }}</td>
+                <td>{{ p.email ?? "-" }}</td>
+                <td>{{ p.phone ?? "-" }}</td>
+                <td><span class="role-badge" :class="roleBadgeClass(p.role)">{{ p.role }}</span></td>
+                <td class="cell-actions">
+                  <button class="btn-sm btn-outline" @click="openEdit(p)">Edit</button>
+                  <button class="btn-sm btn-danger" @click="openDelete(p)">Hapus</button>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Pagination Controls -->
+      <div class="pagination-footer" v-if="profiles.length > 0">
+        <div class="row-count">Menampilkan {{ profiles.length }} dari {{ totalCount }} baris data.</div>
+        <div class="pagination-controls">
+          <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
+          <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
+          <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+          <select v-model="limit" class="page-select">
+            <option :value="5">5</option>
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
       </div>
     </section>
 
@@ -251,13 +311,25 @@ onMounted(loadProfiles);
 .page-header h2 { margin: 0; font-size: 22px; }
 .page-header p { margin: 6px 0 0; color: #64748b; }
 .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 12px 28px rgba(15,23,42,.08); }
-.table-responsive { width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #e2e8f0; }
-.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-.data-table th { background: #f8fafc; color: #475569; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; }
-.data-table td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; color: #1e293b; vertical-align: middle; }
+.table-responsive { width: 100%; overflow-x: auto; border-radius: 8px; background: #fff; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.data-table th { background: #ffffff; color: #1e293b; font-weight: 700; padding: 16px 16px; border-bottom: 2px solid #f1f5f9; font-size: 13px; white-space: nowrap; }
+.data-table td { padding: 16px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; background: #ffffff; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: #f8fafc; }
-.cell-bold { font-weight: 600; color: #0f172a; }
+.filter-row th { padding: 8px 16px; border-bottom: 2px solid #f1f5f9; }
+.filter-row input, .filter-select { width: 100%; padding: 8px 12px; font-size: 12px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; transition: border-color .2s; }
+.filter-row input:focus, .filter-select:focus { border-color: #4f46e5; }
+
+/* Pagination styling */
+.pagination-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; font-size: 13px; color: #64748b; border-top: 1px solid #f1f5f9; margin-top: 8px; flex-wrap: wrap; gap: 12px; }
+.pagination-controls { display: flex; align-items: center; gap: 12px; }
+.btn-page { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: #0f172a; font-weight: 600; transition: all .2s; }
+.btn-page:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.btn-page:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 13px; outline: none; cursor: pointer; }
+
+.cell-bold { font-weight: 600; color: #4f46e5; }
 .cell-actions { display: flex; gap: 6px; }
 .role-badge { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .role-customer { background: #dbeafe; color: #1d4ed8; }
@@ -290,4 +362,12 @@ onMounted(loadProfiles);
 .modal-body-text { color: #475569; font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+
+.empty-table-cell {
+  text-align: center;
+  padding: 48px 16px !important;
+  color: #64748b;
+  font-style: italic;
+  background: #ffffff !important;
+}
 </style>

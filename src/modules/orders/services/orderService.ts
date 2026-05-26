@@ -82,6 +82,86 @@ export const fetchAllOrders = async () => {
   return (data ?? []) as Order[];
 };
 
+export interface OrderFilters {
+  customer_name?: string;
+  address?: string;
+  volume?: string;
+  schedule_at?: string;
+  status?: string | string[];
+  driver_name?: string;
+  assigned_driver_id?: string;
+  customer_id?: string;
+  is_unassigned?: boolean;
+}
+
+export const fetchOrdersPaginated = async (
+  page: number,
+  limit: number,
+  filters: OrderFilters = {}
+) => {
+  let query = supabase.from("orders").select("*", { count: "exact" });
+
+  if (filters.status && filters.status !== "all") {
+    if (Array.isArray(filters.status)) {
+      query = query.in("status", filters.status);
+    } else {
+      query = query.eq("status", filters.status);
+    }
+  }
+  if (filters.customer_name) {
+    query = query.ilike("customer_name", `%${filters.customer_name}%`);
+  }
+  if (filters.address) {
+    query = query.ilike("address", `%${filters.address}%`);
+  }
+  if (filters.volume) {
+    query = query.ilike("volume", `%${filters.volume}%`);
+  }
+  if (filters.schedule_at) {
+    query = query.gte("schedule_at", `${filters.schedule_at}T00:00:00`)
+                 .lte("schedule_at", `${filters.schedule_at}T23:59:59`);
+  }
+  
+  if (filters.assigned_driver_id) {
+    query = query.eq("assigned_driver_id", filters.assigned_driver_id);
+  }
+  if (filters.customer_id) {
+    query = query.eq("customer_id", filters.customer_id);
+  }
+  if (filters.is_unassigned) {
+    query = query.is("assigned_driver_id", null);
+  }
+
+  // Handle driver_name filtering by fetching matching profiles first
+  if (filters.driver_name) {
+    const { data: driverProfiles } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("name", `%${filters.driver_name}%`);
+      
+    if (driverProfiles && driverProfiles.length > 0) {
+      const driverIds = driverProfiles.map(p => p.id);
+      query = query.in("assigned_driver_id", driverIds);
+    } else {
+      // If no drivers match, return empty result
+      return { data: [], count: 0 };
+    }
+  }
+
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  const { data, error, count } = await query
+    .range(from, to)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return { data: (data ?? []) as Order[], count: count ?? 0 };
+};
+
 export const fetchOrderById = async (orderId: string) => {
   const { data, error } = await supabase
     .from("orders")
@@ -129,7 +209,7 @@ export const updateOrderLocation = (
 };
 
 export const claimOrder = (orderId: string, driverId: string) => {
-  return updateOrder(orderId, { assigned_driver_id: driverId, status: "dikirim" });
+  return updateOrder(orderId, { assigned_driver_id: driverId, status: "diproses" });
 };
 
 export const deleteOrder = async (orderId: string) => {

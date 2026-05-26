@@ -96,8 +96,8 @@ const formatDate = (value: string | null) => {
 .table-responsive {
   width: 100%;
   overflow-x: auto;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
   margin-top: 16px;
 }
 
@@ -105,25 +105,25 @@ const formatDate = (value: string | null) => {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .order-table th {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 600;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  background: #ffffff;
+  color: #1e293b;
+  font-weight: 700;
+  padding: 16px 16px;
+  border-bottom: 2px solid #f1f5f9;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .order-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #e2e8f0;
-  color: #1e293b;
+  padding: 16px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
   vertical-align: middle;
+  background: #ffffff;
 }
 
 .order-table tr:last-child td {
@@ -136,7 +136,7 @@ const formatDate = (value: string | null) => {
 
 .cell-bold {
   font-weight: 600;
-  color: #0f172a;
+  color: #4f46e5; /* Indigo color for main identifier */
 }
 
 .cell-muted {

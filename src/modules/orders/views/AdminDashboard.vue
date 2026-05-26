@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, computed } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
+import { debounce } from "lodash-es";
 import type { Order, OrderStatus } from "../types";
-import { fetchAllOrders, updateOrder, deleteOrder } from "../services/orderService";
+import { fetchOrdersPaginated, updateOrder, deleteOrder } from "../services/orderService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import AdminAnalytics from "../components/AdminAnalytics.vue";
 import { fetchDrivers } from "../../auth/services/profileService";
@@ -15,6 +16,12 @@ const loading = ref(true);
 const errorMsg = ref("");
 const successMsg = ref("");
 const selectedFilter = ref("all");
+
+// Pagination state
+const currentPage = ref(1);
+const limit = ref(10);
+const totalCount = ref(0);
+const totalPages = ref(1);
 
 const updates = reactive<Record<string, { status: OrderStatus; driverId: string | null }>>({});
 const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
@@ -36,24 +43,75 @@ const deleting = ref(false);
 
 const formatDate = (v: string | null) => v ? new Date(v).toLocaleString() : "-";
 
-const filteredOrders = computed(() => {
-  if (selectedFilter.value === "all") return orders.value;
-  return orders.value.filter(o => o.status === selectedFilter.value);
+const tableFilters = reactive({
+  customerName: "",
+  address: "",
+  volume: "",
+  scheduleAt: "",
+  driverName: ""
 });
 
-const loadData = async () => {
+const loadDrivers = async () => {
+  try {
+    drivers.value = await fetchDrivers();
+  } catch (e) {
+    console.error("Failed to load drivers:", e);
+  }
+};
+
+const fetchTableData = async () => {
   loading.value = true;
   errorMsg.value = "";
   try {
-    const [od, dd] = await Promise.all([fetchAllOrders(), fetchDrivers()]);
-    orders.value = od;
-    drivers.value = dd;
-    od.forEach(o => { updates[o.id] = { status: o.status, driverId: o.assigned_driver_id }; });
+    const filters = {
+      customer_name: tableFilters.customerName || undefined,
+      address: tableFilters.address || undefined,
+      volume: tableFilters.volume || undefined,
+      schedule_at: tableFilters.scheduleAt || undefined,
+      driver_name: tableFilters.driverName || undefined,
+      status: selectedFilter.value !== "all" ? selectedFilter.value : undefined
+    };
+
+    const res = await fetchOrdersPaginated(currentPage.value, limit.value, filters);
+    orders.value = res.data;
+    totalCount.value = res.count;
+    totalPages.value = Math.ceil(res.count / limit.value) || 1;
+    
+    // Reset local updates state
+    orders.value.forEach(o => { updates[o.id] = { status: o.status, driverId: o.assigned_driver_id }; });
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : "Gagal memuat data.";
   } finally {
     loading.value = false;
   }
+};
+
+// Debounced fetch for inputs
+const debouncedFetch = debounce(() => {
+  currentPage.value = 1; // Reset to page 1 on filter change
+  fetchTableData();
+}, 500);
+
+watch(tableFilters, () => {
+  debouncedFetch();
+}, { deep: true });
+
+watch(selectedFilter, () => {
+  currentPage.value = 1;
+  fetchTableData();
+});
+
+watch(limit, () => {
+  currentPage.value = 1;
+  fetchTableData();
+});
+
+const prevPage = () => { if (currentPage.value > 1) { currentPage.value--; fetchTableData(); } };
+const nextPage = () => { if (currentPage.value < totalPages.value) { currentPage.value++; fetchTableData(); } };
+
+const loadData = async () => {
+  await loadDrivers();
+  await fetchTableData();
 };
 
 const handleSave = async (orderId: string) => {
@@ -184,29 +242,41 @@ onMounted(loadData);
             <option value="all">Semua Status</option>
             <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
           </select>
-          <span class="order-count">{{ filteredOrders.length }} pesanan</span>
+          <span class="order-count">Total {{ totalCount }} baris data.</span>
         </div>
 
         <section class="card">
-        <div v-if="filteredOrders.length === 0" class="empty">Tidak ada pesanan.</div>
-        <div v-else class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Pelanggan</th>
-                <th>Alamat</th>
-                <th>Volume</th>
-                <th>Jadwal</th>
-                <th>Status</th>
-                <th>Supir</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="order in filteredOrders" :key="order.id">
-                <td class="cell-bold">{{ order.customer_name }}</td>
-                <td class="cell-muted" :title="order.address">{{ order.address }}</td>
-                <td>{{ order.volume }}</td>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Alamat</th>
+                  <th>Volume</th>
+                  <th>Jadwal</th>
+                  <th>Status</th>
+                  <th>Supir</th>
+                  <th>Aksi</th>
+                </tr>
+                <tr class="filter-row">
+                  <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
+                  <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
+                  <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Volume..." /></th>
+                  <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
+                  <th><!-- Status uses the main filter dropdown, no inline input needed --></th>
+                  <th><input type="text" v-model="tableFilters.driverName" placeholder="Cari Supir..." /></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="orders.length === 0">
+                  <td colspan="7" class="empty-table-cell">Tidak ada pesanan.</td>
+                </tr>
+                <template v-else>
+                  <tr v-for="order in orders" :key="order.id">
+                    <td class="cell-bold">{{ order.customer_name }}</td>
+                    <td class="cell-muted" :title="order.address">{{ order.address }}</td>
+                    <td>{{ order.volume }}</td>
                 <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                 <td><OrderStatusBadge :status="order.status" /></td>
                 <td class="cell-muted">
@@ -238,9 +308,26 @@ onMounted(loadData);
                     </div>
                   </div>
                 </td>
-              </tr>
-            </tbody>
+                  </tr>
+                </template>
+              </tbody>
           </table>
+        </div>
+        
+        <!-- Pagination Controls -->
+        <div class="pagination-footer" v-if="orders.length > 0">
+          <div class="row-count">Menampilkan {{ orders.length }} dari {{ totalCount }} baris data.</div>
+          <div class="pagination-controls">
+            <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
+            <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
+            <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+            <select v-model="limit" class="page-select">
+              <option :value="5">5</option>
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+            </select>
+          </div>
         </div>
       </section>
       </template>
@@ -376,13 +463,25 @@ onMounted(loadData);
 .filter-wrapper select { padding: 8px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #cbd5e1; color: #1e293b; outline: none; background: #fff; cursor: pointer; min-width: 140px; transition: border-color .2s; }
 .filter-wrapper select:focus { border-color: #0f172a; }
 .order-count { margin-left: auto; font-size: 13px; color: #64748b; font-weight: 500; }
-.table-responsive { width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #e2e8f0; }
-.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-.data-table th { background: #f8fafc; color: #475569; font-weight: 600; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; white-space: nowrap; }
-.data-table td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; color: #1e293b; vertical-align: middle; }
+.table-responsive { width: 100%; overflow-x: auto; border-radius: 8px; background: #fff; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.data-table th { background: #ffffff; color: #1e293b; font-weight: 700; padding: 16px 16px; border-bottom: 2px solid #f1f5f9; font-size: 13px; white-space: nowrap; }
+.filter-row th { padding: 8px 16px; border-bottom: 2px solid #f1f5f9; }
+.filter-row input { width: 100%; padding: 8px 12px; font-size: 12px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; transition: border-color .2s; }
+.filter-row input:focus { border-color: #4f46e5; }
+.data-table td { padding: 16px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; background: #ffffff; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: #f8fafc; }
-.cell-bold { font-weight: 600; color: #0f172a; }
+.cell-bold { font-weight: 600; color: #4f46e5; }
+
+/* Pagination styling */
+.pagination-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; font-size: 13px; color: #64748b; border-top: 1px solid #f1f5f9; margin-top: 8px; flex-wrap: wrap; gap: 12px; }
+.pagination-controls { display: flex; align-items: center; gap: 12px; }
+.btn-page { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; cursor: pointer; color: #0f172a; font-weight: 600; transition: all .2s; }
+.btn-page:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.btn-page:disabled { opacity: 0.5; cursor: not-allowed; }
+.page-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 13px; outline: none; cursor: pointer; }
+
 .cell-muted { color: #64748b; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-date { color: #475569; font-size: 13px; white-space: nowrap; }
 .cell-actions-group { vertical-align: middle; min-width: 220px; }
@@ -428,4 +527,12 @@ onMounted(loadData);
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
 @media (max-width: 767px) { .field-grid { grid-template-columns: 1fr; } }
+
+.empty-table-cell {
+  text-align: center;
+  padding: 48px 16px !important;
+  color: #64748b;
+  font-style: italic;
+  background: #ffffff !important;
+}
 </style>

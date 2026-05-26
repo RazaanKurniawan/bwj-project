@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { debounce } from "lodash-es";
 import type { Order, OrderStatus } from "../types";
 import {
   claimOrder,
-  fetchAvailableOrders,
+  fetchOrdersPaginated,
   fetchDriverOrders,
   updateOrderLocation,
   updateOrderStatus,
@@ -14,8 +15,15 @@ import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import { useAuthStore } from "../../auth/stores/authStore";
 
 const authStore = useAuthStore();
-const assignedOrders = ref<Order[]>([]);
+const activeAssigned = ref<Order[]>([]);
 const availableOrders = ref<Order[]>([]);
+const historyOrders = ref<Order[]>([]);
+
+const tableFilters = reactive({ customerName: "", address: "", volume: "", scheduleAt: "", status: "all" });
+const currentPage = ref(1);
+const limit = ref(10);
+const totalCount = ref(0);
+const totalPages = ref(1);
 const statusUpdates = reactive<Record<string, OrderStatus>>({});
 const loading = ref(true);
 const errorMsg = ref("");
@@ -43,7 +51,7 @@ const handleFileChange = (e: Event) => {
 const handleUploadProof = async () => {
   if (!proofTarget.value || !proofFile.value) return;
   
-  const orderObj = assignedOrders.value.find(o => o.id === proofTarget.value);
+  const orderObj = activeAssigned.value.find(o => o.id === proofTarget.value);
   
   uploadingProof.value = true;
   errorMsg.value = "";
@@ -87,15 +95,7 @@ const handleConfirm = async () => {
 const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
 
 const hasActiveOrder = computed(() => {
-  return assignedOrders.value.some(o => o.status !== "selesai" && o.status !== "batal");
-});
-
-const activeAssigned = computed(() => {
-  return assignedOrders.value.filter(o => o.status !== "selesai" && o.status !== "batal");
-});
-
-const historyOrders = computed(() => {
-  return assignedOrders.value.filter(o => o.status === "selesai" || o.status === "batal");
+  return activeAssigned.value.length > 0;
 });
 
 const formatDate = (value: string | null) => {
@@ -105,28 +105,74 @@ const formatDate = (value: string | null) => {
   return new Date(value).toLocaleString();
 };
 
-const refresh = async () => {
+const fetchPaginatedData = async () => {
   const user = authStore.user.value;
-  if (!user) {
-    return;
-  }
-
+  if (!user) return;
   loading.value = true;
   errorMsg.value = "";
-
   try {
-    const [assigned, available] = await Promise.all([
-      fetchDriverOrders(user.id),
-      fetchAvailableOrders(),
-    ]);
-
-    assignedOrders.value = assigned;
-    availableOrders.value = available;
-    assigned.forEach((order) => {
-      statusUpdates[order.id] = order.status;
-    });
+    if (activeTab.value === "active") {
+      const res = await fetchOrdersPaginated(currentPage.value, limit.value, {
+        is_unassigned: true,
+        customer_name: tableFilters.customerName || undefined,
+        address: tableFilters.address || undefined,
+        volume: tableFilters.volume || undefined,
+        schedule_at: tableFilters.scheduleAt || undefined,
+      });
+      availableOrders.value = res.data;
+      totalCount.value = res.count;
+      totalPages.value = Math.ceil(res.count / limit.value) || 1;
+    } else {
+      const res = await fetchOrdersPaginated(currentPage.value, limit.value, {
+        assigned_driver_id: user.id,
+        status: tableFilters.status !== "all" ? tableFilters.status : ["selesai", "batal"],
+        customer_name: tableFilters.customerName || undefined,
+        address: tableFilters.address || undefined,
+        volume: tableFilters.volume || undefined,
+        schedule_at: tableFilters.scheduleAt || undefined,
+      });
+      historyOrders.value = res.data;
+      totalCount.value = res.count;
+      totalPages.value = Math.ceil(res.count / limit.value) || 1;
+    }
   } catch (error) {
-    errorMsg.value = error instanceof Error ? error.message : "Gagal memuat data.";
+    errorMsg.value = error instanceof Error ? error.message : "Gagal memuat data paginasi.";
+  } finally {
+    loading.value = false;
+  }
+};
+
+const debouncedFetch = debounce(() => {
+  currentPage.value = 1;
+  fetchPaginatedData();
+}, 500);
+
+watch(tableFilters, () => debouncedFetch(), { deep: true });
+watch(limit, () => { currentPage.value = 1; fetchPaginatedData(); });
+watch(activeTab, () => {
+  currentPage.value = 1;
+  tableFilters.customerName = "";
+  tableFilters.address = "";
+  tableFilters.volume = "";
+  tableFilters.scheduleAt = "";
+  tableFilters.status = "all";
+  fetchPaginatedData();
+});
+
+const prevPage = () => { if (currentPage.value > 1) { currentPage.value--; fetchPaginatedData(); } };
+const nextPage = () => { if (currentPage.value < totalPages.value) { currentPage.value++; fetchPaginatedData(); } };
+
+const refresh = async () => {
+  const user = authStore.user.value;
+  if (!user) return;
+  loading.value = true;
+  try {
+    const assigned = await fetchDriverOrders(user.id);
+    activeAssigned.value = assigned.filter(o => o.status !== "selesai" && o.status !== "batal");
+    activeAssigned.value.forEach(order => { statusUpdates[order.id] = order.status; });
+    await fetchPaginatedData();
+  } catch (error) {
+    errorMsg.value = error instanceof Error ? error.message : "Gagal memuat data aktif.";
   } finally {
     loading.value = false;
   }
@@ -176,7 +222,7 @@ const handleUpdateStatus = (orderId: string) => {
       try {
         await updateOrderStatus(orderId, status);
         
-        const orderObj = assignedOrders.value.find(o => o.id === orderId);
+        const orderObj = activeAssigned.value.find(o => o.id === orderId);
         if (orderObj && status === "dikirim") {
           await sendWhatsAppNotification(orderObj.phone, orderObj.customer_name, status);
           successMsg.value = `Notifikasi WhatsApp berhasil dikirim ke ${orderObj.customer_name} (${orderObj.phone}).`;
@@ -192,6 +238,14 @@ const handleUpdateStatus = (orderId: string) => {
 };
 
 const handleSendLocation = (orderId: string) => {
+  const orderObj = activeAssigned.value.find(o => o.id === orderId);
+  if (orderObj && orderObj.status !== "dikirim") {
+    errorMsg.value = "Ubah status pesanan menjadi 'Dikirim' terlebih dahulu sebelum membagikan lokasi GPS.";
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => { errorMsg.value = ""; }, 4000);
+    return;
+  }
+
   triggerConfirmation(
     "Konfirmasi Kirim Lokasi",
     "Apakah kamu yakin ingin membagikan lokasi GPS saat ini secara real-time?",
@@ -222,6 +276,11 @@ const handleSendLocation = (orderId: string) => {
       );
     }
   );
+};
+
+const openGoogleMaps = (order: Order) => {
+  const query = encodeURIComponent(order.address);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank");
 };
 
 onMounted(async () => {
@@ -312,8 +371,11 @@ onMounted(async () => {
                       <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
                         Update
                       </button>
-                      <button class="btn-outline" @click="handleSendLocation(order.id)">
-                        Kirim Lokasi
+                      <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+                      </button>
+                      <button class="btn-outline map-btn icon-btn" @click="openGoogleMaps(order)" title="Navigasi Pelanggan">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
                       </button>
                     </td>
                   </tr>
@@ -355,11 +417,14 @@ onMounted(async () => {
                       </option>
                     </select>
                     <div class="mc-actions">
-                      <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
-                        Update
+                      <button class="btn-secondary flex-1" @click="handleUpdateStatus(order.id)">
+                        Update Status
                       </button>
-                      <button class="btn-outline" @click="handleSendLocation(order.id)">
-                        Kirim Lokasi
+                      <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+                      </button>
+                      <button class="btn-outline map-btn icon-btn" @click="openGoogleMaps(order)" title="Navigasi Pelanggan">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
                       </button>
                     </div>
                   </div>
@@ -469,6 +534,21 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+
+          <!-- Pagination Controls for Available Orders -->
+          <div class="pagination-footer desktop-only" v-if="availableOrders.length > 0">
+            <div class="row-count">Menampilkan {{ availableOrders.length }} dari {{ totalCount }} baris data.</div>
+            <div class="pagination-controls">
+              <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
+              <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
+              <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+              <select v-model="limit" class="page-select">
+                <option :value="5">5</option>
+                <option :value="10">10</option>
+                <option :value="20">20</option>
+              </select>
+            </div>
+          </div>
         </section>
       </template>
 
@@ -481,10 +561,7 @@ onMounted(async () => {
             <p>Pesanan yang sudah selesai atau dibatalkan.</p>
           </header>
 
-          <div v-if="historyOrders.length === 0" class="empty">Belum ada riwayat pesanan.</div>
-
-          <template v-else>
-            <!-- Desktop Table -->
+          <!-- Desktop Table -->
             <div class="table-responsive desktop-only">
               <table class="order-table">
                 <thead>
@@ -498,6 +575,10 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
+                  <tr v-if="historyOrders.length === 0">
+                    <td colspan="6" class="empty-table-cell">Belum ada riwayat pesanan.</td>
+                  </tr>
+                  <template v-else>
                   <tr v-for="order in historyOrders" :key="order.id">
                     <td class="cell-bold">{{ order.customer_name }}</td>
                     <td class="cell-muted" :title="order.address">{{ order.address }}</td>
@@ -508,6 +589,7 @@ onMounted(async () => {
                       <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">Detail</router-link>
                     </td>
                   </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
@@ -541,7 +623,21 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-          </template>
+
+            <!-- Pagination Controls for History Orders -->
+            <div class="pagination-footer desktop-only" v-if="historyOrders.length > 0">
+              <div class="row-count">Menampilkan {{ historyOrders.length }} dari {{ totalCount }} baris data.</div>
+              <div class="pagination-controls">
+                <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
+                <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
+                <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+                <select v-model="limit" class="page-select">
+                  <option :value="5">5</option>
+                  <option :value="10">10</option>
+                  <option :value="20">20</option>
+                </select>
+              </div>
+            </div>
         </section>
       </template>
     </template>
