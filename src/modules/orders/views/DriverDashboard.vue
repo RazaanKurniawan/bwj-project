@@ -10,7 +10,6 @@ import {
   updateOrderStatus,
   uploadProof
 } from "../services/orderService";
-import { sendEmailNotification } from "../services/notificationService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { useAuthStore } from "../../auth/stores/authStore";
@@ -70,16 +69,9 @@ const handleUploadProof = async () => {
     
     await refresh();
 
-    if (orderObj) {
-      const emailRes = await sendEmailNotification(orderObj.customer_id, orderObj.customer_name, "selesai");
-      if (emailRes.success) {
-        successMsg.value = `Email otomatis berhasil dikirim ke ${orderObj.customer_name} (${emailRes.email}).`;
-      } else {
-        errorMsg.value = `Gagal mengirim email: ${emailRes.error || 'Terjadi kesalahan'}.`;
-      }
-    }
+    successMsg.value = "Pesanan berhasil diselesaikan.";
     
-    setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 10000);
+    setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 5000);
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : "Gagal mengunggah foto.";
   } finally {
@@ -236,15 +228,8 @@ const handleUpdateStatus = (orderId: string) => {
         const orderObj = activeAssigned.value.find(o => o.id === orderId);
         await refresh();
 
-        if (orderObj && status === "dikirim") {
-          const emailRes = await sendEmailNotification(orderObj.customer_id, orderObj.customer_name, status);
-          if (emailRes.success) {
-            successMsg.value = `Notifikasi email berhasil dikirim ke ${orderObj.customer_name} (${emailRes.email}).`;
-          } else {
-            errorMsg.value = `Gagal mengirim email ke ${orderObj.customer_name}: ${emailRes.error || 'Terjadi kesalahan'}.`;
-          }
-          setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 10000);
-        }
+        successMsg.value = `Status pesanan berhasil diperbarui menjadi "${status}".`;
+        setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 5000);
       } catch (error) {
         errorMsg.value = error instanceof Error ? error.message : "Gagal update status.";
       }

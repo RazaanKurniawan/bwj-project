@@ -20,8 +20,10 @@ const name = ref(props.customerName ?? "");
 const phone = ref(props.customerPhone ?? "");
 const address = ref("");
 const scheduleAt = ref("");
-const volume = ref("Tangki Air");
+const volume = ref("Air Pam");
 const truckCount = ref<number | string>(1);
+const customTruckCount = ref<number>(1);
+const isCustomTruck = ref(false);
 const notes = ref("");
 
 const gettingLocation = ref(false);
@@ -116,8 +118,10 @@ const errorMsg = ref("");
 const resetForm = () => {
   address.value = "";
   scheduleAt.value = "";
-  volume.value = "Tangki Air";
+  volume.value = "Air Pam";
   truckCount.value = 1;
+  customTruckCount.value = 1;
+  isCustomTruck.value = false;
   notes.value = "";
 };
 
@@ -132,7 +136,7 @@ const handleSubmit = async () => {
   }
 
   const schedule = scheduleAt.value ? new Date(scheduleAt.value).toISOString() : null;
-  const count = Number(truckCount.value);
+  const count = isCustomTruck.value ? customTruckCount.value : Number(truckCount.value);
   const newOrders: Order[] = [];
 
   try {
@@ -217,21 +221,38 @@ const handleSubmit = async () => {
       </label>
       <div class="row-fields">
         <label class="field">
-          <span>Kategori</span>
+          <span>Jenis Air</span>
           <CustomSelect
             v-model="volume"
             :options="[
-              { label: 'Tangki Air', value: 'Tangki Air' },
-              { label: 'Air Minum Isi Ulang', value: 'Air Minum Isi Ulang' },
+              { label: 'Air Pam', value: 'Air Pam' },
+              { label: 'Air Minum', value: 'Air Minum' },
             ]"
           />
         </label>
         <label class="field">
           <span>Jumlah Truk</span>
           <CustomSelect
+            v-if="!isCustomTruck"
             v-model="truckCount"
-            :options="Array.from({ length: 10 }, (_, i) => ({ label: `${i + 1} Truk`, value: i + 1 }))"
+            :options="[
+              ...Array.from({ length: 10 }, (_, i) => ({ label: `${i + 1} Truk`, value: i + 1 })),
+              { label: 'Custom...', value: 'custom' },
+            ]"
+            @update:modelValue="(val: any) => { if (val === 'custom') { isCustomTruck = true; truckCount = 'custom'; } }"
           />
+          <div v-else class="custom-truck-input">
+            <input
+              type="number"
+              v-model.number="customTruckCount"
+              min="1"
+              max="100"
+              placeholder="Jumlah truk"
+            />
+            <button type="button" class="btn-reset-truck" @click="isCustomTruck = false; truckCount = 1">
+              ✕
+            </button>
+          </div>
         </label>
       </div>
       <label class="field">
@@ -370,5 +391,48 @@ header p {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.custom-truck-input {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.custom-truck-input input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.custom-truck-input input:focus {
+  border-color: #0f172a;
+}
+
+.btn-reset-truck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.btn-reset-truck:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
 }
 </style>

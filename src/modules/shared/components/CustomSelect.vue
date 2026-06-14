@@ -132,7 +132,7 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", handleClickOutsi
 }
 
 .csel-wrapper.csel-open {
-  z-index: 50;
+  z-index: 9999;
 }
 
 /* ─── Trigger Button ─── */
