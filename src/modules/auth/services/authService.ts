@@ -19,3 +19,7 @@ export const signUpWithEmail = (
 export const signOut = () => {
   return supabase.auth.signOut();
 };
+
+export const updateUserCredentials = (patch: { email?: string; password?: string }) => {
+  return supabase.auth.updateUser(patch);
+};

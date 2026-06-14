@@ -10,8 +10,9 @@ import {
   updateOrderStatus,
   uploadProof
 } from "../services/orderService";
-import { sendWhatsAppNotification } from "../services/notificationService";
+import { sendEmailNotification } from "../services/notificationService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
+import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { useAuthStore } from "../../auth/stores/authStore";
 
 const authStore = useAuthStore();
@@ -49,7 +50,7 @@ const handleFileChange = (e: Event) => {
 };
 
 const handleUploadProof = async () => {
-  if (!proofTarget.value || !proofFile.value) return;
+  if (!proofTarget.value) return;
   
   const orderObj = activeAssigned.value.find(o => o.id === proofTarget.value);
   
@@ -58,18 +59,27 @@ const handleUploadProof = async () => {
   successMsg.value = "";
   
   try {
-    await uploadProof(proofTarget.value, proofFile.value);
+    if (proofFile.value) {
+      await uploadProof(proofTarget.value, proofFile.value);
+    } else {
+      await updateOrderStatus(proofTarget.value, "selesai");
+    }
     showProofModal.value = false;
     proofTarget.value = null;
-    
-    if (orderObj) {
-      await sendWhatsAppNotification(orderObj.phone, orderObj.customer_name, "selesai");
-      successMsg.value = `Pesan WhatsApp otomatis terkirim ke ${orderObj.customer_name}.`;
-    }
+    proofFile.value = null;
     
     await refresh();
+
+    if (orderObj) {
+      const emailRes = await sendEmailNotification(orderObj.customer_id, orderObj.customer_name, "selesai");
+      if (emailRes.success) {
+        successMsg.value = `Email otomatis berhasil dikirim ke ${orderObj.customer_name} (${emailRes.email}).`;
+      } else {
+        errorMsg.value = `Gagal mengirim email: ${emailRes.error || 'Terjadi kesalahan'}.`;
+      }
+    }
     
-    setTimeout(() => { successMsg.value = ""; }, 5000);
+    setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 10000);
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : "Gagal mengunggah foto.";
   } finally {
@@ -93,6 +103,8 @@ const handleConfirm = async () => {
 };
 
 const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
+const statusSelectOptions = computed(() => statusOptions.map((s) => ({ label: s, value: s })));
+const limitOptions = [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }];
 
 const hasActiveOrder = computed(() => {
   return activeAssigned.value.length > 0;
@@ -221,15 +233,18 @@ const handleUpdateStatus = (orderId: string) => {
       successMsg.value = "";
       try {
         await updateOrderStatus(orderId, status);
-        
         const orderObj = activeAssigned.value.find(o => o.id === orderId);
-        if (orderObj && status === "dikirim") {
-          await sendWhatsAppNotification(orderObj.phone, orderObj.customer_name, status);
-          successMsg.value = `Notifikasi WhatsApp berhasil dikirim ke ${orderObj.customer_name} (${orderObj.phone}).`;
-          setTimeout(() => { successMsg.value = ""; }, 5000);
-        }
-        
         await refresh();
+
+        if (orderObj && status === "dikirim") {
+          const emailRes = await sendEmailNotification(orderObj.customer_id, orderObj.customer_name, status);
+          if (emailRes.success) {
+            successMsg.value = `Notifikasi email berhasil dikirim ke ${orderObj.customer_name} (${emailRes.email}).`;
+          } else {
+            errorMsg.value = `Gagal mengirim email ke ${orderObj.customer_name}: ${emailRes.error || 'Terjadi kesalahan'}.`;
+          }
+          setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 10000);
+        }
       } catch (error) {
         errorMsg.value = error instanceof Error ? error.message : "Gagal update status.";
       }
@@ -361,11 +376,7 @@ onMounted(async () => {
                       <OrderStatusBadge :status="order.status" />
                     </td>
                     <td>
-                      <select v-model="statusUpdates[order.id]" class="table-select">
-                        <option v-for="status in statusOptions" :key="status" :value="status">
-                          {{ status }}
-                        </option>
-                      </select>
+                      <CustomSelect v-model="statusUpdates[order.id]" :options="statusSelectOptions" :small="true" />
                     </td>
                     <td class="cell-actions">
                       <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
@@ -411,11 +422,7 @@ onMounted(async () => {
                     </div>
                   </div>
                   <div class="mc-footer">
-                    <select v-model="statusUpdates[order.id]" class="table-select">
-                      <option v-for="status in statusOptions" :key="status" :value="status">
-                        {{ status }}
-                      </option>
-                    </select>
+                    <CustomSelect v-model="statusUpdates[order.id]" :options="statusSelectOptions" />
                     <div class="mc-actions">
                       <button class="btn-secondary flex-1" @click="handleUpdateStatus(order.id)">
                         Update Status
@@ -536,17 +543,13 @@ onMounted(async () => {
           </div>
 
           <!-- Pagination Controls for Available Orders -->
-          <div class="pagination-footer desktop-only" v-if="availableOrders.length > 0">
+          <div class="pagination-footer" v-if="availableOrders.length > 0">
             <div class="row-count">Menampilkan {{ availableOrders.length }} dari {{ totalCount }} baris data.</div>
             <div class="pagination-controls">
               <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
               <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
               <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
-              <select v-model="limit" class="page-select">
-                <option :value="5">5</option>
-                <option :value="10">10</option>
-                <option :value="20">20</option>
-              </select>
+              <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
             </div>
           </div>
         </section>
@@ -625,17 +628,13 @@ onMounted(async () => {
             </div>
 
             <!-- Pagination Controls for History Orders -->
-            <div class="pagination-footer desktop-only" v-if="historyOrders.length > 0">
+            <div class="pagination-footer" v-if="historyOrders.length > 0">
               <div class="row-count">Menampilkan {{ historyOrders.length }} dari {{ totalCount }} baris data.</div>
               <div class="pagination-controls">
                 <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
                 <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
                 <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
-                <select v-model="limit" class="page-select">
-                  <option :value="5">5</option>
-                  <option :value="10">10</option>
-                  <option :value="20">20</option>
-                </select>
+                <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
               </div>
             </div>
         </section>
@@ -694,8 +693,8 @@ onMounted(async () => {
         <p class="modal-body-text" style="margin-bottom: 16px;">Pesanan selesai membutuhkan foto bukti pengiriman ke pelanggan.</p>
         <form @submit.prevent="handleUploadProof" class="modal-form">
           <label class="field">
-            <span>Ambil Foto / Pilih Galeri</span>
-            <input type="file" accept="image/*" capture="environment" @change="handleFileChange" required />
+            <span>Ambil Foto / Pilih Galeri (Opsional)</span>
+            <input type="file" accept="image/*" capture="environment" @change="handleFileChange" />
           </label>
           <div class="modal-actions">
             <button type="button" class="btn-outline" @click="showProofModal = false">Batal</button>
@@ -711,7 +710,8 @@ onMounted(async () => {
 
 <style scoped>
 .dashboard {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
 }
 
@@ -873,17 +873,6 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.table-select {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  font-size: 13px;
-  color: #1e293b;
-  background: #fff;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.2s;
-}
 
 .table-select:focus {
   border-color: #0f172a;
@@ -1017,7 +1006,7 @@ onMounted(async () => {
 
 .info-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -1069,6 +1058,20 @@ onMounted(async () => {
   }
   .mobile-only {
     display: block;
+  }
+  
+  .pagination-footer {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 20px;
+  }
+  
+  .pagination-controls {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 

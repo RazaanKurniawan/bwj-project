@@ -15,9 +15,21 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: "/profile",
+      name: "profile",
+      component: () => import("../modules/auth/views/ProfileView.vue"),
+      meta: { requiresAuth: true },
+    },
+    {
       path: "/customer",
       name: "customer",
       component: () => import("../modules/orders/views/CustomerDashboard.vue"),
+      meta: { requiresAuth: true, role: ["customer", "admin"] },
+    },
+    {
+      path: "/customer/rewards",
+      name: "customer-rewards",
+      component: () => import("../modules/orders/views/CustomerRewardsView.vue"),
       meta: { requiresAuth: true, role: ["customer", "admin"] },
     },
     {
@@ -36,6 +48,24 @@ const router = createRouter({
       path: "/admin/users",
       name: "admin-users",
       component: () => import("../modules/auth/views/AdminUsersView.vue"),
+      meta: { requiresAuth: true, role: ["admin"] },
+    },
+    {
+      path: "/admin/orders",
+      name: "admin-orders",
+      component: () => import("../modules/orders/views/AdminOrdersView.vue"),
+      meta: { requiresAuth: true, role: ["admin"] },
+    },
+    {
+      path: "/admin/tracking",
+      name: "admin-tracking",
+      component: () => import("../modules/tracking/views/AdminTrackingView.vue"),
+      meta: { requiresAuth: true, role: ["admin"] },
+    },
+    {
+      path: "/admin/rewards",
+      name: "admin-rewards",
+      component: () => import("../modules/orders/views/AdminRewardsView.vue"),
       meta: { requiresAuth: true, role: ["admin"] },
     },
     {

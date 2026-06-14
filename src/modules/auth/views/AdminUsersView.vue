@@ -4,6 +4,7 @@ import { debounce } from "lodash-es";
 import type { Profile, UserRole } from "../types";
 import { fetchProfilesPaginated, upsertProfile, updateProfile, deleteProfile } from "../services/profileService";
 import { signUpWithEmail } from "../services/authService";
+import CustomSelect from "../../shared/components/CustomSelect.vue";
 
 const profiles = ref<Profile[]>([]);
 const loading = ref(true);
@@ -30,6 +31,26 @@ const currentPage = ref(1);
 const limit = ref(10);
 const totalCount = ref(0);
 const totalPages = ref(1);
+
+const roleFilterOptions = [
+  { label: "Semua Role", value: "all" },
+  { label: "Customer", value: "customer" },
+  { label: "Driver", value: "driver" },
+  { label: "Admin", value: "admin" },
+];
+
+const roleSelectOptions = [
+  { label: "Customer", value: "customer" },
+  { label: "Driver", value: "driver" },
+  { label: "Admin", value: "admin" },
+];
+
+const limitOptions = [
+  { label: "5", value: 5 },
+  { label: "10", value: 10 },
+  { label: "20", value: 20 },
+  { label: "50", value: 50 },
+];
 
 const loadProfiles = async () => {
   loading.value = true;
@@ -169,7 +190,8 @@ onMounted(loadProfiles);
     <p v-if="loading" class="info">Memuat data user...</p>
 
     <section v-else class="card">
-      <div class="table-responsive">
+      <!-- Desktop Table -->
+      <div class="table-responsive desktop-only">
         <table class="data-table">
           <thead>
             <tr>
@@ -184,12 +206,7 @@ onMounted(loadProfiles);
               <th><input type="text" v-model="tableFilters.email" placeholder="Cari Email..." /></th>
               <th><input type="text" v-model="tableFilters.phone" placeholder="Cari HP..." /></th>
               <th>
-                <select v-model="tableFilters.role" class="filter-select">
-                  <option value="all">Semua Role</option>
-                  <option value="customer">Customer</option>
-                  <option value="driver">Driver</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <CustomSelect v-model="tableFilters.role" :options="roleFilterOptions" class="filter-select" />
               </th>
               <th></th>
             </tr>
@@ -213,7 +230,41 @@ onMounted(loadProfiles);
           </tbody>
         </table>
       </div>
-      
+
+      <!-- Mobile Card View -->
+      <div class="mobile-only">
+        <!-- Mobile Filters -->
+        <div class="mobile-filters">
+          <input type="text" v-model="tableFilters.name" placeholder="🔍 Cari nama..." class="mobile-filter-input" />
+          <div class="mobile-filter-row">
+            <input type="text" v-model="tableFilters.email" placeholder="Email..." class="mobile-filter-select" />
+            <CustomSelect v-model="tableFilters.role" :options="roleFilterOptions" class="mobile-filter-select" />
+          </div>
+        </div>
+
+        <div v-if="profiles.length === 0" class="mobile-empty">Belum ada user.</div>
+
+        <div v-else class="mobile-cards">
+          <div v-for="p in profiles" :key="p.id" class="mobile-user-card">
+            <div class="muc-header">
+              <div class="muc-info">
+                <span class="muc-name">{{ p.name ?? '(Tanpa Nama)' }}</span>
+                <span class="muc-email">{{ p.email ?? '-' }}</span>
+              </div>
+              <span class="role-badge" :class="roleBadgeClass(p.role)">{{ p.role }}</span>
+            </div>
+            <div class="muc-body" v-if="p.phone">
+              <span class="muc-label">📱 No HP</span>
+              <span class="muc-value">{{ p.phone }}</span>
+            </div>
+            <div class="muc-actions">
+              <button class="btn-sm btn-outline" style="flex:1; justify-content:center" @click="openEdit(p)">✏️ Edit</button>
+              <button class="btn-sm btn-danger" style="flex:1; justify-content:center" @click="openDelete(p)">🗑️ Hapus</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Pagination Controls -->
       <div class="pagination-footer" v-if="profiles.length > 0">
         <div class="row-count">Menampilkan {{ profiles.length }} dari {{ totalCount }} baris data.</div>
@@ -221,12 +272,7 @@ onMounted(loadProfiles);
           <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
           <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
           <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
-          <select v-model="limit" class="page-select">
-            <option :value="5">5</option>
-            <option :value="10">10</option>
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-          </select>
+          <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
         </div>
       </div>
     </section>
@@ -242,11 +288,7 @@ onMounted(loadProfiles);
           <label class="field"><span>No HP</span><input v-model="createForm.phone" type="tel" /></label>
           <label class="field">
             <span>Role</span>
-            <select v-model="createForm.role">
-              <option value="customer">Customer</option>
-              <option value="driver">Driver</option>
-              <option value="admin">Admin</option>
-            </select>
+            <CustomSelect v-model="createForm.role" :options="roleSelectOptions" />
           </label>
           <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
           <div class="modal-actions">
@@ -266,11 +308,7 @@ onMounted(loadProfiles);
           <label class="field"><span>No HP</span><input v-model="editForm.phone" type="tel" /></label>
           <label class="field">
             <span>Role</span>
-            <select v-model="editForm.role">
-              <option value="customer">Customer</option>
-              <option value="driver">Driver</option>
-              <option value="admin">Admin</option>
-            </select>
+            <CustomSelect v-model="editForm.role" :options="roleSelectOptions" />
           </label>
           <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
           <div class="modal-actions">
@@ -301,7 +339,7 @@ onMounted(loadProfiles);
 </template>
 
 <style scoped>
-.users-page { display: grid; gap: 20px; }
+.users-page { display: flex; flex-direction: column; gap: 20px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .page-header h2 { margin: 0; font-size: 22px; }
 .page-header p { margin: 6px 0 0; color: #64748b; }
@@ -309,11 +347,11 @@ onMounted(loadProfiles);
 .table-responsive { width: 100%; overflow-x: auto; border-radius: 8px; background: #fff; }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 .data-table th { background: #ffffff; color: #1e293b; font-weight: 700; padding: 16px 16px; border-bottom: 2px solid #f1f5f9; font-size: 13px; white-space: nowrap; }
-.data-table td { padding: 16px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; background: #ffffff; }
+.data-table td { padding: 16px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; background: #ffffff; white-space: nowrap; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: #f8fafc; }
 .filter-row th { padding: 8px 16px; border-bottom: 2px solid #f1f5f9; }
-.filter-row input, .filter-select { width: 100%; padding: 8px 12px; font-size: 12px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; transition: border-color .2s; }
+.filter-row input, .filter-select { width: 100%; min-width: 140px; padding: 8px 12px; font-size: 12px; border-radius: 8px; border: 1px solid #e2e8f0; outline: none; transition: border-color .2s; }
 .filter-row input:focus, .filter-select:focus { border-color: #4f46e5; }
 
 /* Pagination styling */
@@ -364,5 +402,70 @@ onMounted(loadProfiles);
   color: #64748b;
   font-style: italic;
   background: #ffffff !important;
+}
+
+/* ─── Mobile responsive ─── */
+@media (max-width: 768px) {
+  .users-page { gap: 14px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .page-header h2 { font-size: 20px; }
+  .btn-primary { width: 100%; text-align: center; justify-content: center; padding: 12px 16px; font-size: 14px; border-radius: 12px; }
+  .card { padding: 12px; border-radius: 14px; }
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+  .pagination-footer { flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+  .pagination-controls { flex-wrap: wrap; justify-content: center; }
+  .modal-content { width: min(360px, 92%); padding: 20px; border-radius: 20px; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; padding: 12px; font-size: 14px; border-radius: 12px; text-align: center; justify-content: center; }
+}
+
+/* ─── Desktop/Mobile helpers ─── */
+.desktop-only { display: block; }
+.mobile-only { display: none; }
+
+/* ─── Mobile Filters ─── */
+.mobile-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.mobile-filter-input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; background: #f8fafc; }
+.mobile-filter-input:focus { border-color: #4f46e5; background: #fff; }
+.mobile-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.mobile-filter-select { padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 13px; background: #f8fafc; outline: none; width: 100%; box-sizing: border-box; }
+
+/* ─── Mobile Empty ─── */
+.mobile-empty { text-align: center; padding: 48px 16px; color: #64748b; font-style: italic; }
+
+/* ─── Mobile Cards ─── */
+.mobile-cards { display: flex; flex-direction: column; gap: 12px; }
+
+.mobile-user-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.06);
+}
+
+.muc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-bottom: 1px solid #e2e8f0;
+  gap: 12px;
+}
+
+.muc-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.muc-name { font-size: 15px; font-weight: 700; color: #0f172a; }
+.muc-email { font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.muc-body { padding: 12px 16px; display: flex; gap: 6px; align-items: center; border-bottom: 1px dashed #e2e8f0; }
+.muc-label { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
+.muc-value { font-size: 14px; color: #334155; font-weight: 500; }
+
+.muc-actions {
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
 }
 </style>

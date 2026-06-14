@@ -4,6 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Order } from "../types";
 import { createOrder } from "../services/orderService";
+import CustomSelect from "../../shared/components/CustomSelect.vue";
 
 const props = defineProps<{
   customerId: string;
@@ -19,7 +20,7 @@ const name = ref(props.customerName ?? "");
 const phone = ref(props.customerPhone ?? "");
 const address = ref("");
 const scheduleAt = ref("");
-const volume = ref("8000 Liter");
+const volume = ref("Tangki Air");
 const truckCount = ref<number | string>(1);
 const notes = ref("");
 
@@ -115,7 +116,7 @@ const errorMsg = ref("");
 const resetForm = () => {
   address.value = "";
   scheduleAt.value = "";
-  volume.value = "5000 Liter";
+  volume.value = "Tangki Air";
   truckCount.value = 1;
   notes.value = "";
 };
@@ -216,19 +217,21 @@ const handleSubmit = async () => {
       </label>
       <div class="row-fields">
         <label class="field">
-          <span>Volume per Truk</span>
-          <select v-model="volume">
-            <option>5000 Liter</option>
-            <option>8000 Liter</option>
-            <option>10000 Liter</option>
-            <option>16000 Liter</option>
-          </select>
+          <span>Kategori</span>
+          <CustomSelect
+            v-model="volume"
+            :options="[
+              { label: 'Tangki Air', value: 'Tangki Air' },
+              { label: 'Air Minum Isi Ulang', value: 'Air Minum Isi Ulang' },
+            ]"
+          />
         </label>
         <label class="field">
           <span>Jumlah Truk</span>
-          <select v-model="truckCount">
-            <option v-for="n in 10" :key="n" :value="n">{{ n }} Truk</option>
-          </select>
+          <CustomSelect
+            v-model="truckCount"
+            :options="Array.from({ length: 10 }, (_, i) => ({ label: `${i + 1} Truk`, value: i + 1 }))"
+          />
         </label>
       </div>
       <label class="field">

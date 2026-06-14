@@ -3,18 +3,24 @@ import { computed, onMounted, ref, reactive, watch } from "vue";
 import { debounce } from "lodash-es";
 import OrderForm from "../components/OrderForm.vue";
 import OrderList from "../components/OrderList.vue";
+import MobileOrderList from "../components/MobileOrderList.vue";
 import MultiOrderMap from "../components/MultiOrderMap.vue";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import type { Order } from "../types";
 import { fetchCustomerOrders, fetchOrdersPaginated } from "../services/orderService";
 import { useAuthStore } from "../../auth/stores/authStore";
+import CustomSelect from "../../shared/components/CustomSelect.vue";
+import { useRoute, useRouter } from "vue-router";
+
+const route = useRoute();
+const router = useRouter();
 
 const authStore = useAuthStore();
 const orders = ref<Order[]>([]);
 const loading = ref(true);
 const errorMsg = ref("");
 const selectedStatus = ref("all");
-const activeMainTab = ref<"dashboard" | "create">("dashboard");
+const activeMainTab = ref<"dashboard" | "create">(route.query.tab === "create" ? "create" : "dashboard");
 const activeTab = ref<"active" | "history">("active");
 const showSuccessModal = ref(false);
 
@@ -31,6 +37,29 @@ const currentPage = ref(1);
 const limit = ref(10);
 const totalCount = ref(0);
 const totalPages = ref(1);
+
+const statusFilterOptions = computed(() => {
+  const options = [{ label: "Semua", value: "all" }];
+  if (activeTab.value === 'active') {
+    options.push(
+      { label: "Menunggu", value: "menunggu" },
+      { label: "Diproses", value: "diproses" },
+      { label: "Dikirim", value: "dikirim" }
+    );
+  } else {
+    options.push(
+      { label: "Selesai", value: "selesai" },
+      { label: "Batal", value: "batal" }
+    );
+  }
+  return options;
+});
+
+const limitOptions = [
+  { label: "5", value: 5 },
+  { label: "10", value: 10 },
+  { label: "20", value: 20 },
+];
 
 const loadTrackableOrders = async () => {
   const uid = userId.value;
@@ -92,6 +121,24 @@ watch(activeTab, () => {
   tableFilters.scheduleAt = "";
   selectedStatus.value = "all";
   fetchPaginatedData(); 
+});
+
+watch(() => route.query.tab, (newTab) => {
+  if (newTab === "create") {
+    activeMainTab.value = "create";
+  } else {
+    activeMainTab.value = "dashboard";
+  }
+});
+
+watch(activeMainTab, (newTab) => {
+  if (newTab === "create") {
+    router.replace({ query: { ...route.query, tab: "create" } });
+  } else {
+    const q = { ...route.query };
+    delete q.tab;
+    router.replace({ query: q });
+  }
 });
 
 const prevPage = () => { if (currentPage.value > 1) { currentPage.value--; fetchPaginatedData(); } };
@@ -170,19 +217,12 @@ onMounted(async () => {
 
           <div class="filter-inline">
             <label for="status-filter">Filter:</label>
-            <select id="status-filter" v-model="selectedStatus">
-              <option value="all">Semua</option>
-              <option value="menunggu" v-if="activeTab === 'active'">Menunggu</option>
-              <option value="diproses" v-if="activeTab === 'active'">Diproses</option>
-              <option value="dikirim" v-if="activeTab === 'active'">Dikirim</option>
-              <option value="selesai" v-if="activeTab === 'history'">Selesai</option>
-              <option value="batal" v-if="activeTab === 'history'">Batal</option>
-            </select>
+            <CustomSelect id="status-filter" v-model="selectedStatus" :options="statusFilterOptions" />
           </div>
         </div>
 
-        <!-- Render order list inline to apply identical structure as AdminDashboard -->
-        <section class="card">
+        <!-- Desktop: Table view -->
+        <section class="card desktop-view">
           <div class="table-responsive">
             <table class="data-table">
               <thead>
@@ -200,14 +240,7 @@ onMounted(async () => {
                   <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Volume..." /></th>
                   <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
                   <th>
-                    <select v-model="selectedStatus" class="filter-select">
-                      <option value="all">Semua Status</option>
-                      <option value="menunggu" v-if="activeTab === 'active'">Menunggu</option>
-                      <option value="diproses" v-if="activeTab === 'active'">Diproses</option>
-                      <option value="dikirim" v-if="activeTab === 'active'">Dikirim</option>
-                      <option value="selesai" v-if="activeTab === 'history'">Selesai</option>
-                      <option value="batal" v-if="activeTab === 'history'">Batal</option>
-                    </select>
+                    <CustomSelect v-model="selectedStatus" :options="statusFilterOptions" class="filter-select" />
                   </th>
                   <th></th>
                 </tr>
@@ -241,14 +274,26 @@ onMounted(async () => {
               <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
               <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
               <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
-              <select v-model="limit" class="page-select">
-                <option :value="5">5</option>
-                <option :value="10">10</option>
-                <option :value="20">20</option>
-              </select>
+              <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
             </div>
           </div>
         </section>
+
+        <!-- Mobile: Card view -->
+        <div class="mobile-view">
+          <MobileOrderList
+            :orders="activeTab === 'active' ? activeOrders : historyOrders"
+            :empty-text="activeTab === 'active' ? 'Tidak ada pesanan aktif.' : 'Belum ada riwayat pesanan.'"
+          />
+          <!-- Mobile Pagination -->
+          <div class="mobile-pagination" v-if="(activeTab === 'active' ? activeOrders.length : historyOrders.length) > 0">
+            <span class="mobile-page-info">{{ currentPage }} / {{ totalPages }}</span>
+            <div class="mobile-page-btns">
+              <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo; Prev</button>
+              <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">Next &raquo;</button>
+            </div>
+          </div>
+        </div>
 
       </template>
     </template>
@@ -519,5 +564,94 @@ onMounted(async () => {
   color: #64748b;
   font-style: italic;
   background: #ffffff !important;
+}
+
+/* ─── Desktop/Mobile view toggles ─── */
+.desktop-view {
+  display: block;
+}
+.mobile-view {
+  display: none;
+}
+
+/* ─── Mobile Pagination ─── */
+.mobile-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 4px;
+  font-size: 14px;
+  color: #475569;
+}
+.mobile-page-info {
+  font-weight: 600;
+}
+.mobile-page-btns {
+  display: flex;
+  gap: 8px;
+}
+.mobile-page-btns .btn-page {
+  padding: 8px 16px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+/* ─── Mobile responsive ─── */
+@media (max-width: 768px) {
+  .dashboard {
+    gap: 14px;
+  }
+
+  .desktop-view {
+    display: none !important;
+  }
+  .mobile-view {
+    display: block !important;
+  }
+
+  .main-tabs-wrapper {
+    display: none;
+  }
+
+  .main-tab-btn {
+    padding: 14px;
+    font-size: 15px;
+    border-radius: 12px;
+  }
+
+  .tabs-wrapper {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .tabs {
+    width: 100%;
+  }
+
+  .tab-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .filter-inline {
+    width: 100%;
+  }
+
+  .filter-inline select {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 14px;
+    border-radius: 10px;
+  }
+
+  .modal-content {
+    width: min(360px, 92%);
+    padding: 28px 20px;
+    border-radius: 20px;
+  }
 }
 </style>
