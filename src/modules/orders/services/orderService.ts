@@ -92,6 +92,7 @@ export interface OrderFilters {
   assigned_driver_id?: string;
   customer_id?: string;
   is_unassigned?: boolean;
+  is_pending_approval?: boolean;
 }
 
 export const fetchOrdersPaginated = async (
@@ -130,6 +131,9 @@ export const fetchOrdersPaginated = async (
   }
   if (filters.is_unassigned) {
     query = query.is("assigned_driver_id", null);
+  }
+  if (filters.is_pending_approval) {
+    query = query.eq("status", "menunggu").not("assigned_driver_id", "is", null);
   }
 
   // Handle driver_name filtering by fetching matching profiles first
@@ -209,7 +213,7 @@ export const updateOrderLocation = (
 };
 
 export const claimOrder = (orderId: string, driverId: string) => {
-  return updateOrder(orderId, { assigned_driver_id: driverId, status: "diproses" });
+  return updateOrder(orderId, { assigned_driver_id: driverId, status: "menunggu" });
 };
 
 export const deleteOrder = async (orderId: string) => {

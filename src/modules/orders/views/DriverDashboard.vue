@@ -16,6 +16,7 @@ import { useAuthStore } from "../../auth/stores/authStore";
 
 const authStore = useAuthStore();
 const activeAssigned = ref<Order[]>([]);
+const pendingApproval = ref<Order[]>([]);
 const availableOrders = ref<Order[]>([]);
 const historyOrders = ref<Order[]>([]);
 
@@ -94,7 +95,7 @@ const handleConfirm = async () => {
   confirmAction.value = null;
 };
 
-const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
+const statusOptions: OrderStatus[] = ["menunggu", "menunggu_persetujuan", "diproses", "dikirim", "selesai", "batal"];
 const statusSelectOptions = computed(() => statusOptions.map((s) => ({ label: s, value: s })));
 const limitOptions = [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }];
 
@@ -172,7 +173,8 @@ const refresh = async () => {
   loading.value = true;
   try {
     const assigned = await fetchDriverOrders(user.id);
-    activeAssigned.value = assigned.filter(o => o.status !== "selesai" && o.status !== "batal");
+    activeAssigned.value = assigned.filter(o => o.status !== "selesai" && o.status !== "batal" && o.status !== "menunggu");
+    pendingApproval.value = assigned.filter(o => o.status === "menunggu");
     activeAssigned.value.forEach(order => { statusUpdates[order.id] = order.status; });
     await fetchPaginatedData();
   } catch (error) {
@@ -195,7 +197,7 @@ const handleClaim = (orderId: string) => {
 
   triggerConfirmation(
     "Konfirmasi Ambil Pesanan",
-    "Apakah kamu yakin ingin mengambil pesanan ini dan memproses pengirimannya?",
+    "Pesanan ini akan menunggu persetujuan admin terlebih dahulu. Apakah kamu yakin ingin mengajukan pengambilan pesanan ini?",
     async () => {
       try {
         await claimOrder(orderId, user.id);
@@ -207,10 +209,10 @@ const handleClaim = (orderId: string) => {
   );
 };
 
-const handleUpdateStatus = (orderId: string) => {
-  const status = statusUpdates[orderId] ?? "dikirim";
+const advanceStatus = (orderId: string, currentStatus: OrderStatus) => {
+  const targetStatus = currentStatus === "diproses" ? "dikirim" : "selesai";
 
-  if (status === "selesai") {
+  if (targetStatus === "selesai") {
     proofTarget.value = orderId;
     proofFile.value = null;
     showProofModal.value = true;
@@ -219,16 +221,15 @@ const handleUpdateStatus = (orderId: string) => {
 
   triggerConfirmation(
     "Konfirmasi Perbarui Status",
-    `Apakah kamu yakin ingin memperbarui status pesanan menjadi "${status}"?`,
+    `Apakah kamu yakin ingin memperbarui status pesanan menjadi "${targetStatus.toUpperCase()}"?`,
     async () => {
       errorMsg.value = "";
       successMsg.value = "";
       try {
-        await updateOrderStatus(orderId, status);
-        const orderObj = activeAssigned.value.find(o => o.id === orderId);
+        await updateOrderStatus(orderId, targetStatus);
         await refresh();
 
-        successMsg.value = `Status pesanan berhasil diperbarui menjadi "${status}".`;
+        successMsg.value = `Status pesanan berhasil diperbarui menjadi "${targetStatus}".`;
         setTimeout(() => { successMsg.value = ""; errorMsg.value = ""; }, 5000);
       } catch (error) {
         errorMsg.value = error instanceof Error ? error.message : "Gagal update status.";
@@ -344,10 +345,9 @@ onMounted(async () => {
                   <tr>
                     <th>Pelanggan</th>
                     <th>Alamat</th>
-                    <th>Volume</th>
+                    <th>Jenis Air</th>
                     <th>Jadwal</th>
                     <th>Status</th>
-                    <th>Ubah Status</th>
                     <th>Aksi</th>
                   </tr>
                 </thead>
@@ -358,14 +358,15 @@ onMounted(async () => {
                     <td>{{ order.volume }}</td>
                     <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                     <td>
-                      <OrderStatusBadge :status="order.status" />
-                    </td>
-                    <td>
-                      <CustomSelect v-model="statusUpdates[order.id]" :options="statusSelectOptions" :small="true" />
+                      <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                     </td>
                     <td class="cell-actions">
-                      <button class="btn-secondary" @click="handleUpdateStatus(order.id)">
-                        Update
+                      <button 
+                        v-if="order.status === 'diproses' || order.status === 'dikirim'"
+                        class="btn-primary" 
+                        @click="advanceStatus(order.id, order.status)"
+                      >
+                        {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
                       </button>
                       <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
@@ -388,7 +389,7 @@ onMounted(async () => {
                       <span class="label">Pelanggan</span>
                       <span class="value">{{ order.customer_name }}</span>
                     </div>
-                    <OrderStatusBadge :status="order.status" />
+                    <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                   </div>
                   <div class="mc-body">
                     <div class="info-row">
@@ -397,7 +398,7 @@ onMounted(async () => {
                     </div>
                     <div class="info-grid">
                       <div class="info-col">
-                        <span class="label">Volume</span>
+                        <span class="label">Jenis Air</span>
                         <span class="value">{{ order.volume }}</span>
                       </div>
                       <div class="info-col">
@@ -407,10 +408,13 @@ onMounted(async () => {
                     </div>
                   </div>
                   <div class="mc-footer">
-                    <CustomSelect v-model="statusUpdates[order.id]" :options="statusSelectOptions" />
-                    <div class="mc-actions">
-                      <button class="btn-secondary flex-1" @click="handleUpdateStatus(order.id)">
-                        Update Status
+                    <div class="mc-actions" style="width: 100%;">
+                      <button 
+                        v-if="order.status === 'diproses' || order.status === 'dikirim'"
+                        class="btn-primary flex-1" 
+                        @click="advanceStatus(order.id, order.status)"
+                      >
+                        {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
                       </button>
                       <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
@@ -424,6 +428,45 @@ onMounted(async () => {
               </div>
             </div>
           </template>
+        </section>
+
+        <!-- ====== MENUNGGU PERSETUJUAN ====== -->
+        <section class="card" v-if="pendingApproval.length">
+          <header class="card-header">
+            <h3>⏳ Menunggu Persetujuan Admin</h3>
+            <p>Pesanan yang kamu ajukan dan sedang menunggu persetujuan admin.</p>
+          </header>
+
+          <div class="mobile-cards" style="margin-top: 12px;">
+            <div v-for="order in pendingApproval" :key="order.id" class="mobile-card pending-card">
+              <div class="mc-header">
+                <div class="customer-info">
+                  <span class="label">Pelanggan</span>
+                  <span class="value">{{ order.customer_name }}</span>
+                </div>
+                <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
+              </div>
+              <div class="mc-body">
+                <div class="info-row">
+                  <span class="label">Alamat</span>
+                  <span class="value address">{{ order.address }}</span>
+                </div>
+                <div class="info-grid">
+                  <div class="info-col">
+                    <span class="label">Jenis Air</span>
+                    <span class="value">{{ order.volume }}</span>
+                  </div>
+                  <div class="info-col">
+                    <span class="label">Jadwal</span>
+                    <span class="value date">{{ formatDate(order.schedule_at) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mc-footer pending-footer">
+                <span class="pending-info">🕐 Menunggu admin untuk menyetujui pengambilan pesanan ini.</span>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ====== PESANAN MENUNGGU (Table) ====== -->
@@ -444,7 +487,7 @@ onMounted(async () => {
                 <tr>
                   <th>Pelanggan</th>
                   <th>Alamat</th>
-                  <th>Volume</th>
+                  <th>Jenis Air</th>
                   <th>Jadwal</th>
                   <th>Catatan</th>
                   <th>Status</th>
@@ -459,7 +502,7 @@ onMounted(async () => {
                   <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                   <td class="cell-muted">{{ order.notes ?? '-' }}</td>
                   <td>
-                    <OrderStatusBadge :status="order.status" />
+                    <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                   </td>
                   <td class="cell-actions">
                     <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">
@@ -487,7 +530,7 @@ onMounted(async () => {
                     <span class="label">Pelanggan</span>
                     <span class="value">{{ order.customer_name }}</span>
                   </div>
-                  <OrderStatusBadge :status="order.status" />
+                  <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                 </div>
                 <div class="mc-body">
                   <div class="info-row">
@@ -496,7 +539,7 @@ onMounted(async () => {
                   </div>
                   <div class="info-grid">
                     <div class="info-col">
-                      <span class="label">Volume</span>
+                      <span class="label">Jenis Air</span>
                       <span class="value">{{ order.volume }}</span>
                     </div>
                     <div class="info-col">
@@ -556,7 +599,7 @@ onMounted(async () => {
                   <tr>
                     <th>Pelanggan</th>
                     <th>Alamat</th>
-                    <th>Volume</th>
+                    <th>Jenis Air</th>
                     <th>Jadwal</th>
                     <th>Status</th>
                     <th>Aksi</th>
@@ -572,7 +615,7 @@ onMounted(async () => {
                     <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                     <td>{{ order.volume }}</td>
                     <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
-                    <td><OrderStatusBadge :status="order.status" /></td>
+                    <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                     <td>
                       <router-link :to="{ name: 'order-detail', params: { id: order.id } }" class="btn-detail">Detail</router-link>
                     </td>
@@ -591,12 +634,12 @@ onMounted(async () => {
                       <span class="label">Pelanggan</span>
                       <span class="value">{{ order.customer_name }}</span>
                     </div>
-                    <OrderStatusBadge :status="order.status" />
+                    <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                   </div>
                   <div class="mc-body">
                     <div class="info-grid">
                       <div class="info-col">
-                        <span class="label">Volume</span>
+                        <span class="label">Jenis Air</span>
                         <span class="value">{{ order.volume }}</span>
                       </div>
                       <div class="info-col">
@@ -1184,4 +1227,20 @@ onMounted(async () => {
   from { transform: translateY(12px) scale(0.98); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
+/* Pending Approval Card */
+.pending-card {
+  border: 1.5px solid #fed7aa;
+}
+
+.pending-footer {
+  background: #fff7ed;
+}
+
+.pending-info {
+  font-size: 13px;
+  color: #9a3412;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 </style>

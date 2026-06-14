@@ -21,11 +21,11 @@ const totalCount = ref(0);
 const totalPages = ref(1);
 
 const updates = reactive<Record<string, { status: OrderStatus; driverId: string | null }>>({});
-const statusOptions: OrderStatus[] = ["menunggu", "diproses", "dikirim", "selesai", "batal"];
+const statusOptions: OrderStatus[] = ["menunggu", "menunggu_persetujuan", "diproses", "dikirim", "selesai", "batal"];
 
 const statusSelectOptions = computed(() => statusOptions.map(s => ({ label: s, value: s })));
 const statusFilterOptions = computed(() => [{ label: "Semua Status", value: "all" }, ...statusSelectOptions.value]);
-const driverSelectOptions = computed(() => [{ label: "Tidak ada / Belum ditugaskan", value: null }, ...drivers.value.map(d => ({ label: d.name || d.id, value: d.id }))]);
+const driverSelectOptions = computed(() => [{ label: "Pilih Supir", value: null }, ...drivers.value.map(d => ({ label: d.name || d.id, value: d.id }))]);
 const limitOptions = [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }, { label: "50", value: 50 }];
 
 const showEditModal = ref(false);
@@ -166,13 +166,13 @@ onMounted(loadData);
           <table class="data-table">
             <thead>
               <tr>
-                <th>Pelanggan</th><th>Alamat</th><th>Volume</th>
+                <th>Pelanggan</th><th>Alamat</th><th>Jenis Air</th>
                 <th>Jadwal</th><th>Status</th><th>Supir</th><th>Aksi</th>
               </tr>
               <tr class="filter-row">
                 <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
                 <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
-                <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Volume..." /></th>
+                <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
                 <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
                 <th>
                   <CustomSelect v-model="selectedFilter" :options="statusFilterOptions" class="csel-filter-width" />
@@ -191,7 +191,7 @@ onMounted(loadData);
                   <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                   <td>{{ order.volume }}</td>
                   <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
-                  <td><OrderStatusBadge :status="order.status" /></td>
+                  <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                   <td class="cell-muted">
                     {{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? "Belum ada" }}
                   </td>
@@ -200,7 +200,7 @@ onMounted(loadData);
                       <div class="actions-quick" v-if="updates[order.id]">
                         <div class="quick-selects">
                           <CustomSelect v-model="updates[order.id]!.status" :options="statusSelectOptions" :small="true" />
-                          <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" :small="true" />
+                          <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" :small="true" placeholder="Pilih Supir" />
                         </div>
                         <button class="btn-sm btn-save" @click="handleSave(order.id)">Simpan</button>
                       </div>
@@ -236,7 +236,7 @@ onMounted(loadData);
                   <span class="moc-name">{{ order.customer_name }}</span>
                   <span class="moc-phone">{{ order.phone }}</span>
                 </div>
-                <OrderStatusBadge :status="order.status" />
+                <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
               </div>
 
               <div class="moc-body">
@@ -262,7 +262,7 @@ onMounted(loadData);
 
               <div class="moc-footer" v-if="updates[order.id]">
                 <CustomSelect v-model="updates[order.id]!.status" :options="statusSelectOptions" />
-                <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" />
+                <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" placeholder="Pilih Supir" />
                 <div class="moc-actions">
                   <button class="btn-sm btn-save" @click="handleSave(order.id)">💾 Simpan</button>
                   <button class="btn-sm btn-edit" @click="openEdit(order)">✏️ Edit</button>
@@ -297,7 +297,7 @@ onMounted(loadData);
           </div>
           <label class="field"><span>Alamat</span><input v-model="editForm.address" required /></label>
           <div class="field-grid">
-            <label class="field"><span>Volume</span><input v-model="editForm.volume" /></label>
+            <label class="field"><span>Jenis Air</span><input v-model="editForm.volume" /></label>
             <label class="field"><span>Jadwal</span><input v-model="editForm.schedule_at" type="datetime-local" /></label>
           </div>
           <label class="field"><span>Catatan</span><textarea v-model="editForm.notes" rows="2"></textarea></label>
@@ -306,7 +306,7 @@ onMounted(loadData);
               <CustomSelect v-model="editForm.status" :options="statusSelectOptions" />
             </label>
             <label class="field"><span>Supir</span>
-              <CustomSelect v-model="editForm.assigned_driver_id" :options="driverSelectOptions" />
+              <CustomSelect v-model="editForm.assigned_driver_id" :options="driverSelectOptions" placeholder="Pilih Supir" />
             </label>
           </div>
           <p v-if="errorMsg" class="error">{{ errorMsg }}</p>

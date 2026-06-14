@@ -9,7 +9,7 @@ export interface RewardMilestone {
   tier: "bronze" | "silver" | "gold" | "platinum" | "diamond";
 }
 
-export type ClaimStatus = "pending" | "approved" | "rejected";
+export type ClaimStatus = "pending" | "approved" | "rejected" | "completed";
 
 export interface RewardClaim {
   id: string;
@@ -123,8 +123,7 @@ export const fetchCompletedOrderCount = async (customerId: string): Promise<numb
     return 0;
   }
 
-  // MOCK UNTUK TESTING: Tambahkan otomatis 250 pesanan agar tidak perlu membuat pesanan manual
-  return (count ?? 0) + 250;
+  return count ?? 0;
 };
 
 /**

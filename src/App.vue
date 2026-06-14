@@ -80,6 +80,7 @@ const sidebarNavItems = computed(() => {
 
   if (isAdmin.value) {
     items.push({ label: "Pesanan", to: "/admin/orders", icon: "order" });
+    items.push({ label: "Persetujuan", to: "/admin/approval", icon: "approval" });
     items.push({ label: "Lacak Supir", to: "/admin/tracking", icon: "tracking" });
     items.push({ label: "Dashboard", to: "/admin", icon: "admin" });
     items.push({ label: "Hadiah", to: "/admin/rewards", icon: "reward" });
@@ -145,7 +146,7 @@ onUnmounted(() => {
       <!-- Sidebar header / brand -->
       <div class="sidebar-header">
         <div class="sidebar-brand" @click="!sidebarOpen && (sidebarOpen = true)" :style="!sidebarOpen ? 'cursor:pointer' : ''">
-          <span class="brand-mark">BWJ</span>
+          <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-img" />
           <Transition name="fade-text">
             <div v-if="sidebarOpen" class="brand-info">
               <h1>Tracking Air</h1>
@@ -205,6 +206,10 @@ onUnmounted(() => {
             <svg v-if="item.icon === 'plus'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
+            <!-- Approval icon -->
+            <svg v-if="item.icon === 'approval'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" />
+            </svg>
           </div>
           <Transition name="fade-text">
             <span v-if="sidebarOpen" class="sidebar-nav-label">{{ item.label }}</span>
@@ -244,7 +249,7 @@ onUnmounted(() => {
       <!-- Top bar (only on mobile when logged in, or always when on auth page) -->
       <header v-if="!isAuthPage && isLoggedIn" class="app-topbar mobile-only">
         <div class="topbar-brand">
-          <span class="brand-mark-sm">BWJ</span>
+          <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-sm-img" />
           <span class="brand-title-sm">Tracking Air</span>
         </div>
         
@@ -313,6 +318,10 @@ onUnmounted(() => {
           <svg v-if="item.icon === 'plus'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
+          <!-- Approval icon -->
+          <svg v-if="item.icon === 'approval'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" />
+          </svg>
         </div>
         <span class="bottom-nav-label">{{ item.label }}</span>
       </RouterLink>
@@ -353,7 +362,7 @@ onUnmounted(() => {
   color: #e2e8f0;
   display: flex;
   flex-direction: column;
-  z-index: 100;
+  z-index: 9999;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
@@ -382,19 +391,12 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.brand-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.brand-mark-img {
   min-width: 40px;
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
-  color: #fff;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.08em;
+  object-fit: cover;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
 }
@@ -646,7 +648,7 @@ onUnmounted(() => {
   inset: 0;
   background: rgba(15, 23, 42, 0.5);
   backdrop-filter: blur(4px);
-  z-index: 99;
+  z-index: 9998;
 }
 
 /* ─── Main content ─── */
@@ -687,7 +689,7 @@ onUnmounted(() => {
   border-bottom: 1px solid #e2e8f0;
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 9999;
   min-height: 56px;
   box-sizing: border-box;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
@@ -718,18 +720,11 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.brand-mark-sm {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.brand-mark-sm-img {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0f172a, #1e293b);
-  color: #fff;
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  object-fit: cover;
 }
 
 .brand-title-sm {
@@ -837,7 +832,7 @@ onUnmounted(() => {
   background: #fff;
   border-top: 1px solid #e2e8f0;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)) 12px;
-  z-index: 100;
+  z-index: 9999;
   box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
 }
 

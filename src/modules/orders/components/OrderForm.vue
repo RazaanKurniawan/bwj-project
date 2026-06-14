@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, shallowRef } from "vue";
+import { ref, computed, onMounted, shallowRef } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Order } from "../types";
@@ -36,9 +36,44 @@ const mapEl = ref<HTMLDivElement | null>(null);
 const map = shallowRef<L.Map | null>(null);
 const marker = shallowRef<L.Marker | null>(null);
 
+const DEPOT_LAT = -6.432513175969628;
+const DEPOT_LNG = 106.88722928789123;
+
+const formatRupiah = (num: number) => {
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(num);
+};
+
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+const estQty = computed(() => isCustomTruck.value ? customTruckCount.value : Number(truckCount.value));
+const estBase = computed(() => estQty.value * 100000);
+const estDist = computed(() => {
+  if (customerLat.value && customerLng.value) {
+    return calculateDistance(DEPOT_LAT, DEPOT_LNG, customerLat.value, customerLng.value).toFixed(1);
+  }
+  return "0.0";
+});
+const estDelivery = computed(() => {
+  if (customerLat.value && customerLng.value) {
+    const dist = calculateDistance(DEPOT_LAT, DEPOT_LNG, customerLat.value, customerLng.value);
+    return Math.round(dist * 5000);
+  }
+  return 0;
+});
+const estTotal = computed(() => estBase.value + estDelivery.value);
+
 const initMap = () => {
   if (!mapEl.value) return;
-  const initialPos: [number, number] = [-6.200000, 106.816666]; // Default: Jakarta
+  const initialPos: [number, number] = [-6.432513175969628, 106.88722928789123]; // BWJ Depot
 
   const mapInstance = L.map(mapEl.value).setView(initialPos, 12);
   map.value = mapInstance;
@@ -255,6 +290,24 @@ const handleSubmit = async () => {
           </div>
         </label>
       </div>
+      
+      <div v-if="customerLat && customerLng" class="estimation-box">
+        <h4 class="est-title">🧾 Rincian Estimasi Harga</h4>
+        <div class="est-row">
+          <span class="est-label">Harga Dasar ({{ estQty }} Truk &times; Rp 100.000)</span>
+          <span class="est-value">{{ formatRupiah(estBase) }}</span>
+        </div>
+        <div class="est-row">
+          <span class="est-label">Biaya Pengiriman ({{ estDist }} km &times; Rp 5.000)</span>
+          <span class="est-value">{{ formatRupiah(estDelivery) }}</span>
+        </div>
+        <div class="est-divider"></div>
+        <div class="est-row est-total">
+          <span class="est-label">Total Estimasi</span>
+          <span class="est-value">{{ formatRupiah(estTotal) }}</span>
+        </div>
+        <p class="est-note">*Ini hanya estimasi kasar. Harga final dapat berbeda.</p>
+      </div>
       <label class="field">
         <span>Catatan</span>
         <textarea v-model="notes" rows="2" placeholder="Contoh: Tolong hubungi sebelum sampai"></textarea>
@@ -375,16 +428,48 @@ header p {
   z-index: 1;
 }
 
-.error-sm {
-  color: #dc2626;
-  font-size: 12px;
-  margin: 4px 0 0;
-}
+.error-sm { color: #dc2626; font-size: 13px; margin: 6px 0 0; }
+.success-sm { color: #16a34a; font-size: 13px; margin: 6px 0 0; }
 
-.success-sm {
-  color: #16a34a;
-  font-size: 12px;
-  margin: 4px 0 0;
+.estimation-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 4px 0 16px;
+}
+.est-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.est-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+.est-row:last-child {
+  margin-bottom: 0;
+}
+.est-divider {
+  height: 1px;
+  background: #cbd5e1;
+  margin: 12px 0;
+}
+.est-total {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.est-note {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 12px 0 0;
+  text-align: right;
+  font-style: italic;
 }
 
 .row-fields {

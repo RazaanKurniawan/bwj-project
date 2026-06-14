@@ -21,6 +21,7 @@ const statusFilterOptions = [
   { label: "Semua", value: "all" },
   { label: "Menunggu", value: "pending" },
   { label: "Disetujui", value: "approved" },
+  { label: "Selesai", value: "completed" },
   { label: "Ditolak", value: "rejected" },
 ];
 
@@ -35,6 +36,7 @@ const stats = computed(() => {
     total: all.length,
     pending: all.filter((c) => c.status === "pending").length,
     approved: all.filter((c) => c.status === "approved").length,
+    completed: all.filter((c) => c.status === "completed").length,
     rejected: all.filter((c) => c.status === "rejected").length,
   };
 });
@@ -45,12 +47,14 @@ function getMilestone(id: string) {
 
 function statusLabel(s: string) {
   if (s === "approved") return "Disetujui";
+  if (s === "completed") return "Selesai";
   if (s === "rejected") return "Ditolak";
   return "Menunggu";
 }
 
 function statusClass(s: string) {
   if (s === "approved") return "st-approved";
+  if (s === "completed") return "st-completed";
   if (s === "rejected") return "st-rejected";
   return "st-pending";
 }
@@ -116,6 +120,10 @@ onMounted(loadData);
       <div class="stat-card approved" @click="filterStatus = 'approved'">
         <span class="stat-num">{{ stats.approved }}</span>
         <span class="stat-lbl">Disetujui</span>
+      </div>
+      <div class="stat-card completed" @click="filterStatus = 'completed'">
+        <span class="stat-num">{{ stats.completed }}</span>
+        <span class="stat-lbl">Selesai</span>
       </div>
       <div class="stat-card rejected" @click="filterStatus = 'rejected'">
         <span class="stat-num">{{ stats.rejected }}</span>
@@ -261,9 +269,13 @@ onMounted(loadData);
             {{ processing ? '...' : '❌ Tolak' }}
           </button>
         </div>
+        <div v-else-if="selectedClaim.status === 'approved'" class="modal-actions">
+          <button class="btn-primary flex-1" :disabled="processing !== null" @click="handleAction(selectedClaim!.id, 'completed')" style="padding: 13px; font-size: 14px; border-radius: 12px; background: #4f46e5; color: #fff; border: none; font-weight: 700; cursor: pointer;">
+            {{ processing ? 'Memproses...' : '📦 Tandai Selesai' }}
+          </button>
+          <p class="reviewed-info" v-if="selectedClaim.reviewedAt">Direview: {{ new Date(selectedClaim.reviewedAt).toLocaleDateString('id-ID') }}</p>
+        </div>
         <div v-else class="modal-actions">
-          <button class="btn-approve" :disabled="processing !== null" @click="handleAction(selectedClaim!.id, 'approved')">✅ Setujui</button>
-          <button class="btn-reject" :disabled="processing !== null" @click="handleAction(selectedClaim!.id, 'rejected')">❌ Tolak</button>
           <p class="reviewed-info" v-if="selectedClaim.reviewedAt">Direview: {{ new Date(selectedClaim.reviewedAt).toLocaleDateString('id-ID') }}</p>
         </div>
       </div>
@@ -289,6 +301,8 @@ onMounted(loadData);
 .stat-card.pending .stat-num { color: #92400e; }
 .stat-card.approved { border-color: #34d399; background: linear-gradient(135deg, #ecfdf5, #dcfce7); }
 .stat-card.approved .stat-num { color: #16a34a; }
+.stat-card.completed { border-color: #6366f1; background: linear-gradient(135deg, #eef2ff, #e0e7ff); }
+.stat-card.completed .stat-num { color: #4338ca; }
 .stat-card.rejected { border-color: #f87171; background: linear-gradient(135deg, #fef2f2, #fee2e2); }
 .stat-card.rejected .stat-num { color: #dc2626; }
 
@@ -329,6 +343,7 @@ onMounted(loadData);
 .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .st-pending { background: #fef3c7; color: #92400e; }
 .st-approved { background: #dcfce7; color: #16a34a; }
+.st-completed { background: #e0e7ff; color: #4338ca; }
 .st-rejected { background: #fee2e2; color: #dc2626; }
 
 .btn-detail { border: 1px solid #e2e8f0; background: #fff; padding: 7px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; color: #0f172a; transition: all 0.2s; }
@@ -381,6 +396,8 @@ onMounted(loadData);
 
 @media (max-width: 768px) {
   .ar-stats { grid-template-columns: repeat(2, 1fr); }
+  .stat-card { padding: 14px; }
+  .stat-num { font-size: 24px; }
   .ar-table-wrap { display: none; }
   .ar-cards-mobile { display: flex; }
   .ar-filter { flex-wrap: wrap; }

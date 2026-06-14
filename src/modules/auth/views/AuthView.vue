@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { signInWithEmail, signUpWithEmail } from "../services/authService";
+import { signInWithEmail, signUpWithEmail, resetPasswordForEmail } from "../services/authService";
 import { useAuthStore } from "../stores/authStore";
 import type { UserRole } from "../types";
 
-const mode = ref<"login" | "signup">("login");
+const mode = ref<"login" | "signup" | "forgot-password">("login");
 const email = ref("");
 const password = ref("");
 const confirmPassword = ref("");
@@ -41,7 +41,7 @@ const redirectTo = computed(() => {
   return typeof redirect === "string" ? redirect : defaultRedirect.value;
 });
 
-const switchMode = (nextMode: "login" | "signup") => {
+const switchMode = (nextMode: "login" | "signup" | "forgot-password") => {
   mode.value = nextMode;
   errorMsg.value = "";
   infoMsg.value = "";
@@ -105,9 +105,36 @@ const handleSignup = async () => {
   loading.value = false;
 };
 
+const handleForgotPassword = async () => {
+  loading.value = true;
+  errorMsg.value = "";
+  infoMsg.value = "";
+
+  if (!email.value) {
+    errorMsg.value = "Silakan masukkan alamat email Anda.";
+    loading.value = false;
+    return;
+  }
+
+  const { error } = await resetPasswordForEmail(email.value, `${window.location.origin}/update-password`);
+
+  if (error) {
+    errorMsg.value = error.message;
+  } else {
+    infoMsg.value = "Tautan reset password telah dikirim ke email Anda. (Silakan cek folder Inbox/Spam)";
+  }
+  
+  loading.value = false;
+};
+
 const handleSubmit = async () => {
   if (mode.value === "login") {
     await handleLogin();
+    return;
+  }
+  
+  if (mode.value === "forgot-password") {
+    await handleForgotPassword();
     return;
   }
 
@@ -121,7 +148,7 @@ const handleSubmit = async () => {
     <div class="auth-image-panel">
       <div class="auth-image-overlay"></div>
       <div class="auth-image-content">
-        <div class="auth-brand-badge">BWJ</div>
+        <img src="/logobwj.jpeg" alt="BWJ" class="auth-brand-badge" />
         <h2>Berdikari Water Jaya</h2>
         <p>Pengisian Air Bersih — Depok, Jawa Barat</p>
         <div class="auth-image-dots">
@@ -137,11 +164,11 @@ const handleSubmit = async () => {
       <div class="auth-form-wrapper">
         <div class="auth-form-header">
           <div class="auth-logo-mobile">
-            <span class="brand-mark-mini">BWJ</span>
+            <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-mini" />
             <span class="brand-text-mini">Tracking Air</span>
           </div>
-          <h1>{{ mode === "login" ? "Selamat Datang 👋" : "Buat Akun Baru" }}</h1>
-          <p>{{ mode === "login" ? "Masuk untuk mengelola pesanan depot air." : "Daftarkan akun untuk mulai memesan." }}</p>
+          <h1>{{ mode === "login" ? "Selamat Datang 👋" : mode === "signup" ? "Buat Akun Baru" : "Lupa Password" }}</h1>
+          <p>{{ mode === "login" ? "Masuk untuk mengelola pesanan depot air." : mode === "signup" ? "Daftarkan akun untuk mulai memesan." : "Masukkan email Anda dan kami akan mengirimkan tautan untuk mengatur ulang password." }}</p>
         </div>
 
         <form class="auth-form" @submit.prevent="handleSubmit">
@@ -169,11 +196,14 @@ const handleSubmit = async () => {
               <input v-model="email" type="email" placeholder="email@contoh.com" required />
             </div>
           </label>
-          <label class="field">
-            <span>Password</span>
+          <label class="field" v-if="mode !== 'forgot-password'">
+            <div class="password-label">
+              <span>Password</span>
+              <button v-if="mode === 'login'" type="button" class="forgot-link" @click="switchMode('forgot-password')">Lupa Password?</button>
+            </div>
             <div class="input-wrapper">
               <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <input v-model="password" :type="showPassword ? 'text' : 'password'" placeholder="Minimal 6 karakter" required />
+              <input v-model="password" :type="showPassword ? 'text' : 'password'" placeholder="Minimal 6 karakter" :required="mode !== 'forgot-password'" />
               <button type="button" class="password-toggle" @click="showPassword = !showPassword" tabindex="-1">
                 <svg v-if="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -197,13 +227,14 @@ const handleSubmit = async () => {
 
           <button class="btn-primary" type="submit" :disabled="loading">
             <span v-if="loading" class="spinner"></span>
-            {{ loading ? "Memproses..." : mode === "login" ? "Masuk" : "Daftar" }}
+            {{ loading ? "Memproses..." : mode === "login" ? "Masuk" : mode === "signup" ? "Daftar" : "Kirim Tautan" }}
           </button>
         </form>
 
         <footer class="card-footer">
           <span v-if="mode === 'login'">Belum punya akun?</span>
-          <span v-else>Sudah punya akun?</span>
+          <span v-else-if="mode === 'signup'">Sudah punya akun?</span>
+          <span v-else>Kembali ke menu</span>
           <button class="btn-link" type="button" @click="switchMode(mode === 'login' ? 'signup' : 'login')">
             {{ mode === "login" ? "Daftar" : "Login" }}
           </button>
@@ -251,18 +282,12 @@ const handleSubmit = async () => {
 }
 
 .auth-brand-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
+  object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: 0.08em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   margin-bottom: 20px;
 }
 
@@ -353,17 +378,10 @@ const handleSubmit = async () => {
 }
 
 .brand-mark-mini {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: #0f172a;
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 0.08em;
+  object-fit: cover;
 }
 
 .brand-text-mini {
@@ -409,6 +427,28 @@ const handleSubmit = async () => {
   font-size: 14px;
   font-weight: 600;
   color: #334155;
+}
+
+.password-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.forgot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0ea5e9;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.forgot-link:hover {
+  color: #0284c7;
+  text-decoration: underline;
 }
 
 .input-wrapper {

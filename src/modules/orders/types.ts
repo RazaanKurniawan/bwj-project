@@ -1,4 +1,4 @@
-export type OrderStatus = "menunggu" | "diproses" | "dikirim" | "selesai" | "batal";
+export type OrderStatus = "menunggu" | "menunggu_persetujuan" | "diproses" | "dikirim" | "selesai" | "batal";
 
 export type Order = {
   id: string;

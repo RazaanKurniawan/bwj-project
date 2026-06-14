@@ -38,7 +38,7 @@ const formatDate = (value: string | null) => {
             <tr>
               <th>Pelanggan</th>
               <th>Alamat</th>
-              <th>Volume</th>
+              <th>Jenis Air</th>
               <th>Jadwal</th>
               <th>Status</th>
               <th>Aksi</th>

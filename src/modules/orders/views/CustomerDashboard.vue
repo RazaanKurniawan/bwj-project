@@ -43,6 +43,7 @@ const statusFilterOptions = computed(() => {
   if (activeTab.value === 'active') {
     options.push(
       { label: "Menunggu", value: "menunggu" },
+      { label: "Menunggu Approval", value: "menunggu_persetujuan" },
       { label: "Diproses", value: "diproses" },
       { label: "Dikirim", value: "dikirim" }
     );
@@ -78,7 +79,7 @@ const fetchPaginatedData = async () => {
 
   try {
     const isHistory = activeTab.value === "history";
-    const statusScope = isHistory ? ["selesai", "batal"] : ["menunggu", "diproses", "dikirim"];
+    const statusScope = isHistory ? ["selesai", "batal"] : ["menunggu", "menunggu_persetujuan", "diproses", "dikirim"];
     const finalStatus = selectedStatus.value !== "all" ? selectedStatus.value : statusScope;
 
     const res = await fetchOrdersPaginated(currentPage.value, limit.value, {
@@ -229,7 +230,7 @@ onMounted(async () => {
                 <tr>
                   <th>Pelanggan</th>
                   <th>Alamat</th>
-                  <th>Volume</th>
+                  <th>Jenis Air</th>
                   <th>Jadwal</th>
                   <th>Status</th>
                   <th>Aksi</th>
@@ -237,7 +238,7 @@ onMounted(async () => {
                 <tr class="filter-row">
                   <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
                   <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
-                  <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Volume..." /></th>
+                  <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
                   <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
                   <th>
                     <CustomSelect v-model="selectedStatus" :options="statusFilterOptions" class="filter-select" />
@@ -257,7 +258,7 @@ onMounted(async () => {
                     <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                     <td>{{ order.volume }}</td>
                     <td class="cell-date">{{ order.schedule_at ? new Date(order.schedule_at).toLocaleString() : '-' }}</td>
-                    <td><OrderStatusBadge :status="order.status" /></td>
+                    <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                     <td>
                       <router-link class="btn-detail" :to="`/orders/${order.id}`">Detail</router-link>
                     </td>

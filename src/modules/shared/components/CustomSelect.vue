@@ -29,7 +29,7 @@ const isOpen = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 
 const selectedLabel = computed(() => {
-  if (props.modelValue === null || props.modelValue === undefined || props.modelValue === "") {
+  if (props.modelValue === undefined || props.modelValue === "") {
     return null;
   }
   const found = props.options.find((o) => o.value === props.modelValue);

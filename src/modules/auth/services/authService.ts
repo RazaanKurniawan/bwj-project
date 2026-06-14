@@ -23,3 +23,7 @@ export const signOut = () => {
 export const updateUserCredentials = (patch: { email?: string; password?: string }) => {
   return supabase.auth.updateUser(patch);
 };
+
+export const resetPasswordForEmail = (email: string, redirectTo?: string) => {
+  return supabase.auth.resetPasswordForEmail(email, { redirectTo });
+};

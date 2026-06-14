@@ -29,7 +29,7 @@ const formatDate = (value: string | null) => {
             <span class="label">Pelanggan</span>
             <span class="value">{{ order.customer_name }}</span>
           </div>
-          <OrderStatusBadge :status="order.status" />
+          <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
         </div>
 
         <div class="card-body">
@@ -39,7 +39,7 @@ const formatDate = (value: string | null) => {
           </div>
           <div class="info-grid">
             <div class="info-col">
-              <span class="label">Volume</span>
+              <span class="label">Jenis Air</span>
               <span class="value">{{ order.volume }}</span>
             </div>
             <div class="info-col">

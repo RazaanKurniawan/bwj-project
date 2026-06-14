@@ -66,6 +66,7 @@ function getClaimForMilestone(m: RewardMilestone) {
 function getStatusLabel(status: string) {
   switch (status) {
     case 'approved': return '✅ Disetujui';
+    case 'completed': return '📦 Selesai';
     case 'rejected': return '❌ Ditolak';
     default: return '⏳ Menunggu Verifikasi';
   }
@@ -74,6 +75,7 @@ function getStatusLabel(status: string) {
 function getStatusClass(status: string) {
   switch (status) {
     case 'approved': return 'status-approved';
+    case 'completed': return 'status-completed';
     case 'rejected': return 'status-rejected';
     default: return 'status-pending';
   }
@@ -581,6 +583,10 @@ onMounted(async () => {
   background: #dcfce7;
   color: #16a34a;
 }
+.milestone-claimed-badge.status-completed {
+  background: #e0e7ff;
+  color: #4338ca;
+}
 .milestone-claimed-badge.status-rejected {
   background: #fee2e2;
   color: #dc2626;
@@ -632,6 +638,10 @@ onMounted(async () => {
 .history-status.status-approved {
   background: #dcfce7;
   color: #16a34a;
+}
+.history-status.status-completed {
+  background: #e0e7ff;
+  color: #4338ca;
 }
 .history-status.status-rejected {
   background: #fee2e2;

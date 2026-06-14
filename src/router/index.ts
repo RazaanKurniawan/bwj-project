@@ -15,6 +15,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: "/update-password",
+      name: "update-password",
+      component: () => import("../modules/auth/views/UpdatePasswordView.vue"),
+      meta: { public: true },
+    },
+    {
       path: "/profile",
       name: "profile",
       component: () => import("../modules/auth/views/ProfileView.vue"),
@@ -69,6 +75,12 @@ const router = createRouter({
       meta: { requiresAuth: true, role: ["admin"] },
     },
     {
+      path: "/admin/approval",
+      name: "admin-approval",
+      component: () => import("../modules/orders/views/AdminApprovalView.vue"),
+      meta: { requiresAuth: true, role: ["admin"] },
+    },
+    {
       path: "/orders/:id",
       name: "order-detail",
       component: () => import("../modules/orders/views/OrderDetailView.vue"),
@@ -80,6 +92,10 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore();
   await authStore.initAuth();
+
+  if (to.hash.includes("type=recovery") && to.path !== "/update-password") {
+    return { path: "/update-password", hash: to.hash };
+  }
 
   if (to.meta.public) {
     return true;

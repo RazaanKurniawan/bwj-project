@@ -4,11 +4,20 @@ import type { OrderStatus } from "../types";
 defineProps<{
   status: OrderStatus;
 }>();
+
+const statusLabel: Record<OrderStatus, string> = {
+  menunggu: "MENUNGGU",
+  menunggu_persetujuan: "MENUNGGU APPROVAL",
+  diproses: "DIPROSES",
+  dikirim: "DIKIRIM",
+  selesai: "SELESAI",
+  batal: "BATAL",
+};
 </script>
 
 <template>
   <span class="badge" :class="`badge-${status}`">
-    {{ status }}
+    {{ statusLabel[status] ?? status }}
   </span>
 </template>
 
@@ -27,6 +36,11 @@ defineProps<{
 .badge-menunggu {
   background: #fde68a;
   color: #854d0e;
+}
+
+.badge-menunggu_persetujuan {
+  background: #fed7aa;
+  color: #9a3412;
 }
 
 .badge-diproses {

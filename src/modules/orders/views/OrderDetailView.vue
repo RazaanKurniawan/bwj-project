@@ -117,7 +117,7 @@ onMounted(loadOrder);
           </span>
         </div>
         <div>
-          <span class="label">Volume</span>
+          <span class="label">Jenis Air</span>
           <span class="value">{{ order.volume }}</span>
         </div>
         <div>
