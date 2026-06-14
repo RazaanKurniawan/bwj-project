@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { updateUserCredentials } from "../services/authService";
+import { updateUserCredentials, signOut } from "../services/authService";
 import { useAuthStore } from "../stores/authStore";
 
 const password = ref("");
@@ -51,7 +51,8 @@ const handleUpdatePassword = async () => {
   } else {
     successMsg.value = "Password berhasil diperbarui! Anda akan diarahkan ke halaman login.";
     setTimeout(() => {
-      authStore.signOut(); // Force them to login again with new password
+      signOut();
+      authStore.clearSession(); // Force them to login again with new password
       router.replace("/login");
     }, 3000);
   }
