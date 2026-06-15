@@ -4,6 +4,7 @@ import type { Order } from "../../orders/types";
 import { supabase } from "../../core/supabaseClient";
 import { fetchDrivers } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
+import OrderMap from "../../orders/components/OrderMap.vue";
 
 interface ActiveDriver {
   driver: Profile;
@@ -17,6 +18,7 @@ const loading = ref(true);
 const errorMsg = ref("");
 
 let channel: ReturnType<typeof supabase.channel> | null = null;
+const activeMapDriverId = ref<string | null>(null);
 
 const loadActiveDrivers = async () => {
   loading.value = true;
@@ -75,8 +77,8 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const openMaps = (lat: number, lng: number) => {
-  window.open(`https://www.google.com/maps?q=${lat},${lng}`, "_blank");
+const toggleMap = (driverId: string) => {
+  activeMapDriverId.value = activeMapDriverId.value === driverId ? null : driverId;
 };
 
 onMounted(() => {
@@ -140,9 +142,9 @@ onUnmounted(() => {
             </div>
             <div class="driver-actions">
               <div class="order-badge">{{ entry.orders.length }} pesanan</div>
-              <button class="btn-map" v-if="entry.latestLat && entry.latestLng" @click="openMaps(entry.latestLat, entry.latestLng)">
+              <button class="btn-map" v-if="entry.latestLat && entry.latestLng" @click="toggleMap(entry.driver.id)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                Lacak Supir
+                {{ activeMapDriverId === entry.driver.id ? 'Tutup Map' : 'Lacak Supir' }}
               </button>
               <span v-else class="no-gps">Belum ada sinyal GPS</span>
             </div>
@@ -172,6 +174,10 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-if="activeMapDriverId === entry.driver.id && entry.orders[0]" class="driver-map-container">
+            <OrderMap :order-id="entry.orders[0].id" />
           </div>
         </div>
       </div>
@@ -221,6 +227,12 @@ onUnmounted(() => {
 .gps-coord { font-family: monospace; font-size: 12px; color: #64748b; }
 .btn-map { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; font-weight: 600; font-size: 12px; cursor: pointer; transition: all .2s; }
 .btn-map:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+.driver-map-container {
+  margin-top: 16px;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 16px;
+}
 
 @media (max-width: 768px) {
   .tracking-page { gap: 14px; }

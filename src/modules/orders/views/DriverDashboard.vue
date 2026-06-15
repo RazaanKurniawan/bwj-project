@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { debounce } from "lodash-es";
 import type { Order, OrderStatus } from "../types";
 import {
@@ -36,6 +36,8 @@ const showConfirmModal = ref(false);
 const confirmTitle = ref("");
 const confirmMessage = ref("");
 const confirmAction = ref<(() => void) | (() => Promise<void>) | null>(null);
+
+const activeTracking = ref<Record<string, number>>({});
 
 const showProofModal = ref(false);
 const proofTarget = ref<string | null>(null);
@@ -213,6 +215,10 @@ const advanceStatus = (orderId: string, currentStatus: OrderStatus) => {
   const targetStatus = currentStatus === "diproses" ? "dikirim" : "selesai";
 
   if (targetStatus === "selesai") {
+    if (activeTracking.value[orderId]) {
+      navigator.geolocation.clearWatch(activeTracking.value[orderId]);
+      delete activeTracking.value[orderId];
+    }
     proofTarget.value = orderId;
     proofFile.value = null;
     showProofModal.value = true;
@@ -247,6 +253,14 @@ const handleSendLocation = (orderId: string) => {
     return;
   }
 
+  if (activeTracking.value[orderId]) {
+    navigator.geolocation.clearWatch(activeTracking.value[orderId]);
+    delete activeTracking.value[orderId];
+    successMsg.value = "Berhenti membagikan lokasi GPS.";
+    setTimeout(() => { successMsg.value = ""; }, 3000);
+    return;
+  }
+
   triggerConfirmation(
     "Konfirmasi Kirim Lokasi",
     "Apakah kamu yakin ingin membagikan lokasi GPS saat ini secara real-time?",
@@ -256,7 +270,10 @@ const handleSendLocation = (orderId: string) => {
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
+      successMsg.value = "Mulai membagikan lokasi GPS secara real-time.";
+      setTimeout(() => { successMsg.value = ""; }, 3000);
+
+      const watchId = navigator.geolocation.watchPosition(
         async (position) => {
           try {
             await updateOrderLocation(
@@ -265,16 +282,21 @@ const handleSendLocation = (orderId: string) => {
               position.coords.longitude,
               position.coords.accuracy ?? null
             );
-            await refresh();
+            if (orderObj) {
+              orderObj.lat = position.coords.latitude;
+              orderObj.lng = position.coords.longitude;
+            }
           } catch (error) {
-            errorMsg.value = error instanceof Error ? error.message : "Gagal update lokasi.";
+            console.error("Gagal update lokasi.", error);
           }
         },
         (error) => {
-          errorMsg.value = error.message;
+          errorMsg.value = "Gagal mendapatkan lokasi GPS: " + error.message;
         },
-        { enableHighAccuracy: true, maximumAge: 0 }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
+
+      activeTracking.value[orderId] = watchId;
     }
   );
 };
@@ -287,6 +309,12 @@ const openGoogleMaps = (order: Order) => {
 onMounted(async () => {
   await authStore.initAuth();
   await refresh();
+});
+
+onBeforeUnmount(() => {
+  for (const watchId of Object.values(activeTracking.value)) {
+    navigator.geolocation.clearWatch(watchId);
+  }
 });
 </script>
 
@@ -368,8 +396,16 @@ onMounted(async () => {
                       >
                         {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
                       </button>
-                      <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+                      <button 
+                        class="btn-outline icon-btn" 
+                        :class="{ 'tracking-active': activeTracking[order.id] }"
+                        @click="handleSendLocation(order.id)" 
+                        :title="activeTracking[order.id] ? 'Berhenti Berbagi Lokasi' : 'Mulai Berbagi Lokasi'"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon v-if="!activeTracking[order.id]" points="3 11 22 2 13 21 11 13 3 11"></polygon>
+                          <rect v-else x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
+                        </svg>
                       </button>
                       <button class="btn-outline map-btn icon-btn" @click="openGoogleMaps(order)" title="Navigasi Pelanggan">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
@@ -416,8 +452,16 @@ onMounted(async () => {
                       >
                         {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
                       </button>
-                      <button class="btn-outline icon-btn" @click="handleSendLocation(order.id)" title="Update GPS Supir">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+                      <button 
+                        class="btn-outline icon-btn" 
+                        :class="{ 'tracking-active': activeTracking[order.id] }"
+                        @click="handleSendLocation(order.id)" 
+                        :title="activeTracking[order.id] ? 'Berhenti Berbagi Lokasi' : 'Mulai Berbagi Lokasi'"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon v-if="!activeTracking[order.id]" points="3 11 22 2 13 21 11 13 3 11"></polygon>
+                          <rect v-else x="6" y="6" width="12" height="12" rx="2" ry="2"></rect>
+                        </svg>
                       </button>
                       <button class="btn-outline map-btn icon-btn" @click="openGoogleMaps(order)" title="Navigasi Pelanggan">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
@@ -797,6 +841,25 @@ onMounted(async () => {
   font-size: 11px;
   font-weight: 700;
   background: rgba(255, 255, 255, 0.2);
+}
+
+.tracking-active {
+  background: #22c55e !important;
+  border-color: #22c55e !important;
+  color: #fff !important;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
 }
 
 .tab-btn:not(.active) .tab-count {

@@ -23,14 +23,7 @@ const completedOrders = computed(() => props.orders.filter(o => o.status === 'se
 const pendingOrders = computed(() => props.orders.filter(o => o.status !== 'selesai' && o.status !== 'batal').length);
 const canceledOrders = computed(() => props.orders.filter(o => o.status === 'batal').length);
 
-const totalVolume = computed(() => {
-  return props.orders
-    .filter(o => o.status === 'selesai')
-    .reduce((sum, o) => {
-      const vol = parseInt(o.volume.replace(/\D/g, '')) || 0;
-      return sum + vol;
-    }, 0);
-});
+
 
 // Format numbers
 const formatNumber = (num: number) => new Intl.NumberFormat('id-ID').format(num);
@@ -123,15 +116,7 @@ const trendChartOptions = {
           <h3>{{ formatNumber(pendingOrders) }}</h3>
         </div>
       </div>
-      <div class="metric-card">
-        <div class="mc-icon bg-indigo">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-        </div>
-        <div class="mc-info">
-          <p>Total Jenis Air</p>
-          <h3>{{ formatNumber(totalVolume) }}</h3>
-        </div>
-      </div>
+
     </div>
 
     <!-- Charts -->
