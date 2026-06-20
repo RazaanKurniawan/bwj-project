@@ -345,6 +345,13 @@ header p {
   margin-top: 16px;
   display: grid;
   gap: 12px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 768px) {
+  .form {
+    padding-bottom: 80px;
+  }
 }
 
 .field {

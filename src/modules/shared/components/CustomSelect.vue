@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 
 interface Option {
   label: string;
@@ -26,6 +26,7 @@ const emit = defineEmits<{
 }>();
 
 const isOpen = ref(false);
+const openUpward = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 
 const selectedLabel = computed(() => {
@@ -41,8 +42,18 @@ const select = (val: string | number | null) => {
   isOpen.value = false;
 };
 
+// Dropdown height estimate: items * ~40px + padding, max 260px
+const DROPDOWN_HEIGHT = 260;
+const BOTTOM_NAV_HEIGHT = 70; // approximate mobile bottom nav height
+
 const toggle = () => {
-  if (!props.disabled) isOpen.value = !isOpen.value;
+  if (props.disabled) return;
+  if (!isOpen.value && containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - BOTTOM_NAV_HEIGHT;
+    openUpward.value = spaceBelow < DROPDOWN_HEIGHT && rect.top > DROPDOWN_HEIGHT;
+  }
+  isOpen.value = !isOpen.value;
 };
 
 const handleClickOutside = (e: MouseEvent) => {
@@ -87,8 +98,8 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", handleClickOutsi
     </button>
 
     <!-- Dropdown -->
-    <Transition name="csel-drop">
-      <div v-if="isOpen" class="csel-dropdown">
+    <Transition :name="openUpward ? 'csel-drop-up' : 'csel-drop'">
+      <div v-if="isOpen" class="csel-dropdown" :class="{ 'csel-dropdown-up': openUpward }">
         <ul class="csel-list" role="listbox">
           <li
             v-for="opt in options"
@@ -220,6 +231,13 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", handleClickOutsi
   min-width: 140px;
 }
 
+/* Flip upward when near bottom of viewport */
+.csel-dropdown-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12), 0 -2px 8px rgba(15, 23, 42, 0.06);
+}
+
 /* ─── List ─── */
 .csel-list {
   list-style: none;
@@ -286,15 +304,25 @@ onBeforeUnmount(() => document.removeEventListener("mousedown", handleClickOutsi
   font-size: 13px;
 }
 
-/* ─── Transition ─── */
+/* ─── Transition (downward) ─── */
 .csel-drop-enter-active,
 .csel-drop-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
-
 .csel-drop-enter-from,
 .csel-drop-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.97);
+}
+
+/* ─── Transition (upward) ─── */
+.csel-drop-up-enter-active,
+.csel-drop-up-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.csel-drop-up-enter-from,
+.csel-drop-up-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.97);
 }
 </style>

@@ -172,13 +172,14 @@ onMounted(loadData);
             <thead>
               <tr>
                 <th>Pelanggan</th><th>Alamat</th><th>Jenis Air</th>
-                <th>Jadwal</th><th>Status</th><th>Supir</th><th>Aksi</th>
+                <th>Jadwal</th><th>Dibuat</th><th>Status</th><th>Supir</th><th>Aksi</th>
               </tr>
               <tr class="filter-row">
                 <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
                 <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
                 <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
                 <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
+                <th></th>
                 <th>
                   <CustomSelect v-model="selectedFilter" :options="statusFilterOptions" class="csel-filter-width" />
                 </th>
@@ -188,7 +189,7 @@ onMounted(loadData);
             </thead>
             <tbody>
               <tr v-if="orders.length === 0">
-                <td colspan="7" class="empty-table-cell">Tidak ada pesanan.</td>
+                <td colspan="8" class="empty-table-cell">Tidak ada pesanan.</td>
               </tr>
               <template v-else>
                 <tr v-for="order in orders" :key="order.id">
@@ -196,6 +197,7 @@ onMounted(loadData);
                   <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                   <td>{{ order.volume }}</td>
                   <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
+                  <td class="cell-date cell-created">{{ formatDate(order.created_at) }}</td>
                   <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                   <td class="cell-muted">
                     {{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? "Belum ada" }}
@@ -263,6 +265,10 @@ onMounted(loadData);
                     <span class="moc-label">🚗 Supir</span>
                     <span class="moc-value">{{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? 'Belum ada' }}</span>
                   </div>
+                </div>
+                <div class="moc-row">
+                  <span class="moc-label">🕐 Dibuat</span>
+                  <span class="moc-value moc-date">{{ formatDate(order.created_at) }}</span>
                 </div>
                 <div class="moc-row" v-if="order.schedule_at">
                   <span class="moc-label">📅 Jadwal</span>
@@ -398,6 +404,7 @@ onMounted(loadData);
 .cell-bold { font-weight: 600; color: #4f46e5; }
 .cell-muted { color: #64748b; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-date { color: #475569; font-size: 13px; white-space: nowrap; }
+.cell-created { color: #94a3b8; font-size: 12px; }
 .cell-actions-group { vertical-align: middle; min-width: 160px; }
 
 /* Action buttons */
