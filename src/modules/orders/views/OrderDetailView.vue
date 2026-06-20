@@ -5,11 +5,14 @@ import OrderMap from "../components/OrderMap.vue";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import type { Order } from "../types";
 import { fetchOrderById, submitReview, updateOrderStatus } from "../services/orderService";
+import { fetchProfile } from "../../auth/services/profileService";
+import type { Profile } from "../../auth/types";
 import { useAuthStore } from "../../auth/stores/authStore";
 
 const route = useRoute();
 const { profile } = useAuthStore();
 const order = ref<Order | null>(null);
+const driverProfile = ref<Profile | null>(null);
 const loading = ref(true);
 const errorMsg = ref("");
 
@@ -30,6 +33,10 @@ const loadOrder = async () => {
 
   try {
     order.value = await fetchOrderById(orderId);
+    // Load driver profile if assigned
+    if (order.value?.assigned_driver_id) {
+      driverProfile.value = await fetchProfile(order.value.assigned_driver_id);
+    }
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : "Gagal mengambil order.";
   } finally {
@@ -167,6 +174,44 @@ onMounted(loadOrder);
       </div>
     </section>
 
+    <!-- Driver Info Card: tampil jika ada supir & status aktif -->
+    <section
+      v-if="driverProfile && order && ['diproses', 'dikirim', 'selesai'].includes(order.status)"
+      class="driver-card"
+    >
+      <div class="driver-card-header">
+        <div class="driver-avatar">
+          {{ driverProfile.name?.charAt(0).toUpperCase() ?? '?' }}
+        </div>
+        <div class="driver-info">
+          <p class="driver-label">{{ order.status === 'selesai' ? 'Supir Pengiriman' : 'Supir Sedang Mengantar' }}</p>
+          <h3 class="driver-name">{{ driverProfile.name ?? 'Tidak diketahui' }}</h3>
+        </div>
+        <div class="driver-status-dot" :class="order.status === 'dikirim' ? 'dot-active' : 'dot-idle'"></div>
+      </div>
+
+      <div class="driver-contacts">
+        <a
+          v-if="driverProfile.phone"
+          :href="getWaLink(driverProfile.phone)"
+          target="_blank"
+          class="contact-btn contact-wa"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+          Chat WhatsApp
+        </a>
+        <a
+          v-if="driverProfile.phone"
+          :href="'tel:' + driverProfile.phone"
+          class="contact-btn contact-call"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.08 6.08l1.28-.85a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+          Telepon
+        </a>
+        <p v-if="!driverProfile.phone" class="no-contact">Nomor supir tidak tersedia</p>
+      </div>
+    </section>
+
     <OrderMap v-if="order" :order-id="order.id" />
 
     <!-- Custom Cancel Confirm Modal -->
@@ -200,6 +245,127 @@ onMounted(loadOrder);
 .detail {
   display: grid;
   gap: 20px;
+}
+
+/* ─── Driver Contact Card ─── */
+.driver-card {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+  color: #fff;
+}
+
+.driver-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.driver-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.driver-info {
+  flex: 1;
+}
+
+.driver-label {
+  margin: 0 0 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.driver-name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.driver-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-active {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+  animation: pulse-dot 2s infinite;
+}
+
+.dot-idle {
+  background: #64748b;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25); }
+  50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.1); }
+}
+
+.driver-contacts {
+  display: flex;
+  gap: 10px;
+}
+
+.contact-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.contact-wa {
+  background: #25D366;
+  color: #fff;
+}
+
+.contact-wa:hover {
+  background: #1da851;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 211, 102, 0.35);
+}
+
+.contact-call {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(4px);
+}
+
+.contact-call:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-2px);
+}
+
+.no-contact {
+  color: #94a3b8;
+  font-size: 13px;
+  margin: 0;
 }
 
 .card {
