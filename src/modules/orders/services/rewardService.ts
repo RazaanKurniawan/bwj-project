@@ -240,6 +240,25 @@ export const syncRewardData = async (userId: string): Promise<CustomerRewardData
     0
   );
 
+  // Self-healing: if totalCompleted < totalConsumed (e.g. database cleanups but dirty localStorage), reset rewards
+  if (totalCompleted < totalConsumed) {
+    console.warn("Invalid reward state detected (totalCompleted < totalConsumed). Resetting claims...");
+    
+    // Clear claims in DB for this customer
+    await supabase.from("reward_claims").delete().eq("customer_id", userId);
+    
+    // Clear localStorage key
+    localStorage.removeItem(getStorageKey(userId));
+    
+    const clean: CustomerRewardData = {
+      accumulatedOrders: totalCompleted,
+      totalCompletedOrders: totalCompleted,
+      claims: [],
+    };
+    saveCustomerRewardData(userId, clean);
+    return clean;
+  }
+
   const accumulated = Math.max(0, totalCompleted - totalConsumed);
 
   console.log("syncRewardData debug details:", { userId, totalCompleted, totalConsumed, accumulated, claims });

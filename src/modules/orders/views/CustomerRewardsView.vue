@@ -117,16 +117,19 @@ async function handleClaim(milestone: RewardMilestone) {
 watch(
   userId,
   async (newUid) => {
+    console.log("CustomerRewardsView watcher triggered, userId:", newUid);
     if (newUid) {
       loading.value = true;
       try {
         rewardData.value = await syncRewardData(newUid);
+        console.log("CustomerRewardsView sync success:", rewardData.value);
       } catch (err) {
         console.error("Failed to sync reward data:", err);
       } finally {
         loading.value = false;
       }
     } else {
+      console.log("CustomerRewardsView watcher: userId is null");
       rewardData.value = {
         accumulatedOrders: 0,
         totalCompletedOrders: 0,
