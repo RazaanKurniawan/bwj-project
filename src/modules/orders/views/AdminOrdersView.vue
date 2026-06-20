@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref, watch, computed } from "vue";
 import { debounce } from "lodash-es";
 import type { Order, OrderStatus } from "../types";
-import { fetchOrdersPaginated, updateOrder, deleteOrder } from "../services/orderService";
+import { fetchOrdersPaginated, updateOrder } from "../services/orderService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import { fetchDrivers } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
@@ -20,26 +20,28 @@ const limit = ref(10);
 const totalCount = ref(0);
 const totalPages = ref(1);
 
-const updates = reactive<Record<string, { status: OrderStatus; driverId: string | null }>>({});
 const statusOptions: OrderStatus[] = ["menunggu", "menunggu_persetujuan", "diproses", "dikirim", "selesai", "batal"];
-
 const statusSelectOptions = computed(() => statusOptions.map(s => ({ label: s, value: s })));
 const statusFilterOptions = computed(() => [{ label: "Semua Status", value: "all" }, ...statusSelectOptions.value]);
 const driverSelectOptions = computed(() => [{ label: "Pilih Supir", value: null }, ...drivers.value.map(d => ({ label: d.name || d.id, value: d.id }))]);
 const limitOptions = [{ label: "5", value: 5 }, { label: "10", value: 10 }, { label: "20", value: 20 }, { label: "50", value: 50 }];
 
-const showEditModal = ref(false);
-const editOrder = ref<Order | null>(null);
-const editForm = reactive({
-  customer_name: "", address: "", phone: "", volume: "",
-  notes: "", schedule_at: "", status: "menunggu" as OrderStatus,
-  assigned_driver_id: null as string | null,
-});
-const saving = ref(false);
+// Terima popup (untuk status: menunggu)
+const showTerimaModal = ref(false);
+const terimaTarget = ref<Order | null>(null);
+const terimaDriverId = ref<string | null>(null);
+const terima_loading = ref(false);
 
-const showDeleteModal = ref(false);
-const deleteTarget = ref<Order | null>(null);
-const deleting = ref(false);
+// Approve popup (untuk status: menunggu_persetujuan)
+const showApproveModal = ref(false);
+const approveTarget = ref<Order | null>(null);
+const approveDriverId = ref<string | null>(null);
+const approving = ref(false);
+
+// Tolak popup (shared untuk menunggu & menunggu_persetujuan)
+const showTolakModal = ref(false);
+const tolakTarget = ref<Order | null>(null);
+const tolaking = ref(false);
 
 const formatDate = (v: string | null) => v ? new Date(v).toLocaleString() : "-";
 
@@ -67,7 +69,6 @@ const fetchTableData = async () => {
     orders.value = res.data;
     totalCount.value = res.count;
     totalPages.value = Math.ceil(res.count / limit.value) || 1;
-    orders.value.forEach(o => { updates[o.id] = { status: o.status, driverId: o.assigned_driver_id }; });
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : "Gagal memuat data.";
   } finally { loading.value = false; }
@@ -83,62 +84,67 @@ const nextPage = () => { if (currentPage.value < totalPages.value) { currentPage
 
 const loadData = async () => { await loadDrivers(); await fetchTableData(); };
 
-const handleSave = async (orderId: string) => {
-  const u = updates[orderId];
-  if (!u) return;
-  try {
-    await updateOrder(orderId, { status: u.status, assigned_driver_id: u.driverId });
-    successMsg.value = "Pesanan berhasil diperbarui.";
-    setTimeout(() => (successMsg.value = ""), 3000);
-    await loadData();
-  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal update order."; }
+// Terima flow (menunggu → diproses, pilih supir)
+const openTerima = (order: Order) => {
+  terimaTarget.value = order;
+  terimaDriverId.value = null;
+  showTerimaModal.value = true;
 };
-
-const openEdit = (order: Order) => {
-  editOrder.value = order;
-  editForm.customer_name = order.customer_name;
-  editForm.address = order.address;
-  editForm.phone = order.phone;
-  editForm.volume = order.volume;
-  editForm.notes = order.notes ?? "";
-  editForm.schedule_at = order.schedule_at ?? "";
-  editForm.status = order.status;
-  editForm.assigned_driver_id = order.assigned_driver_id;
-  showEditModal.value = true;
-};
-
-const handleEdit = async () => {
-  if (!editOrder.value) return;
-  saving.value = true;
+const handleTerima = async () => {
+  if (!terimaTarget.value) return;
+  terima_loading.value = true;
   errorMsg.value = "";
   try {
-    await updateOrder(editOrder.value.id, {
-      customer_name: editForm.customer_name, address: editForm.address,
-      phone: editForm.phone, volume: editForm.volume,
-      notes: editForm.notes || null, schedule_at: editForm.schedule_at || null,
-      status: editForm.status, assigned_driver_id: editForm.assigned_driver_id,
-    });
-    showEditModal.value = false;
-    successMsg.value = "Pesanan berhasil diedit.";
+    await updateOrder(terimaTarget.value.id, { status: "diproses", assigned_driver_id: terimaDriverId.value });
+    successMsg.value = "Pesanan diterima dan supir berhasil ditugaskan.";
     setTimeout(() => (successMsg.value = ""), 3000);
+    showTerimaModal.value = false;
+    terimaTarget.value = null;
+    terimaDriverId.value = null;
     await loadData();
-  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal edit pesanan."; }
-  finally { saving.value = false; }
+  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal menerima pesanan."; }
+  finally { terima_loading.value = false; }
 };
 
-const openDelete = (order: Order) => { deleteTarget.value = order; showDeleteModal.value = true; };
-
-const handleDelete = async () => {
-  if (!deleteTarget.value) return;
-  deleting.value = true;
+// Approve flow (menunggu_persetujuan → diproses, pilih/ganti supir)
+const openApprove = (order: Order) => {
+  approveTarget.value = order;
+  approveDriverId.value = order.assigned_driver_id;
+  showApproveModal.value = true;
+};
+const handleApprove = async () => {
+  if (!approveTarget.value) return;
+  approving.value = true;
   errorMsg.value = "";
   try {
-    await deleteOrder(deleteTarget.value.id);
-    successMsg.value = "Pesanan berhasil dihapus.";
+    await updateOrder(approveTarget.value.id, { status: "diproses", assigned_driver_id: approveDriverId.value });
+    successMsg.value = "Pesanan disetujui dan supir dikonfirmasi.";
     setTimeout(() => (successMsg.value = ""), 3000);
+    showApproveModal.value = false;
+    approveTarget.value = null;
     await loadData();
-  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal menghapus pesanan."; }
-  finally { deleting.value = false; showDeleteModal.value = false; deleteTarget.value = null; }
+  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal menyetujui pesanan."; }
+  finally { approving.value = false; }
+};
+
+// Tolak flow (menunggu / menunggu_persetujuan → batal)
+const openTolak = (order: Order) => {
+  tolakTarget.value = order;
+  showTolakModal.value = true;
+};
+const handleTolak = async () => {
+  if (!tolakTarget.value) return;
+  tolaking.value = true;
+  errorMsg.value = "";
+  try {
+    await updateOrder(tolakTarget.value.id, { status: "batal" });
+    successMsg.value = "Pesanan berhasil ditolak.";
+    setTimeout(() => (successMsg.value = ""), 3000);
+    showTolakModal.value = false;
+    tolakTarget.value = null;
+    await loadData();
+  } catch (e) { errorMsg.value = e instanceof Error ? e.message : "Gagal menolak pesanan."; }
+  finally { tolaking.value = false; }
 };
 
 onMounted(loadData);
@@ -158,7 +164,6 @@ onMounted(loadData);
     <p v-if="loading" class="info">Memuat data pesanan...</p>
 
     <template v-if="!loading">
-
 
       <section class="card">
         <!-- Desktop Table -->
@@ -196,19 +201,24 @@ onMounted(loadData);
                     {{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? "Belum ada" }}
                   </td>
                   <td class="cell-actions-group">
-                    <div class="actions-card">
-                      <div class="actions-quick" v-if="updates[order.id]">
-                        <div class="quick-selects">
-                          <CustomSelect v-model="updates[order.id]!.status" :options="statusSelectOptions" :small="true" />
-                          <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" :small="true" placeholder="Pilih Supir" />
-                        </div>
-                        <button class="btn-sm btn-save" @click="handleSave(order.id)">Simpan</button>
-                      </div>
-                      <div class="actions-manage">
-                        <button class="btn-sm btn-edit" @click="openEdit(order)">✏️ Edit</button>
-                        <button class="btn-sm btn-delete" @click="openDelete(order)">🗑️ Hapus</button>
-                      </div>
+                    <!-- menunggu: Terima / Tolak -->
+                    <div v-if="order.status === 'menunggu'" class="action-btns">
+                      <button class="btn-sm btn-terima" @click="openTerima(order)">📦 Terima</button>
+                      <button class="btn-sm btn-tolak" @click="openTolak(order)">❌ Tolak</button>
                     </div>
+                    <!-- menunggu_persetujuan: Approve / Tolak -->
+                    <div v-else-if="order.status === 'menunggu_persetujuan'" class="action-btns">
+                      <button class="btn-sm btn-approve" @click="openApprove(order)">✅ Approve</button>
+                      <button class="btn-sm btn-tolak" @click="openTolak(order)">❌ Tolak</button>
+                    </div>
+                    <!-- diproses -->
+                    <span v-else-if="order.status === 'diproses'" class="status-label label-diproses">⚙️ Sedang Diproses</span>
+                    <!-- dikirim -->
+                    <span v-else-if="order.status === 'dikirim'" class="status-label label-dikirim">🚚 Sedang Dikirim</span>
+                    <!-- selesai -->
+                    <span v-else-if="order.status === 'selesai'" class="status-label label-selesai">✔️ Selesai</span>
+                    <!-- batal -->
+                    <span v-else-if="order.status === 'batal'" class="status-label label-batal">🚫 Dibatalkan</span>
                   </td>
                 </tr>
               </template>
@@ -260,13 +270,23 @@ onMounted(loadData);
                 </div>
               </div>
 
-              <div class="moc-footer" v-if="updates[order.id]">
-                <CustomSelect v-model="updates[order.id]!.status" :options="statusSelectOptions" />
-                <CustomSelect v-model="updates[order.id]!.driverId" :options="driverSelectOptions" placeholder="Pilih Supir" />
-                <div class="moc-actions">
-                  <button class="btn-sm btn-save" @click="handleSave(order.id)">💾 Simpan</button>
-                  <button class="btn-sm btn-edit" @click="openEdit(order)">✏️ Edit</button>
-                  <button class="btn-sm btn-delete" @click="openDelete(order)">🗑️</button>
+              <div class="moc-footer">
+                <!-- menunggu -->
+                <div v-if="order.status === 'menunggu'" class="moc-actions">
+                  <button class="btn-sm btn-terima" @click="openTerima(order)">📦 Terima</button>
+                  <button class="btn-sm btn-tolak" @click="openTolak(order)">❌ Tolak</button>
+                </div>
+                <!-- menunggu_persetujuan -->
+                <div v-else-if="order.status === 'menunggu_persetujuan'" class="moc-actions">
+                  <button class="btn-sm btn-approve" @click="openApprove(order)">✅ Approve</button>
+                  <button class="btn-sm btn-tolak" @click="openTolak(order)">❌ Tolak</button>
+                </div>
+                <!-- status final / in-progress -->
+                <div v-else class="moc-actions">
+                  <span v-if="order.status === 'diproses'" class="status-label label-diproses">⚙️ Sedang Diproses</span>
+                  <span v-else-if="order.status === 'dikirim'" class="status-label label-dikirim">🚚 Sedang Dikirim</span>
+                  <span v-else-if="order.status === 'selesai'" class="status-label label-selesai">✔️ Selesai</span>
+                  <span v-else-if="order.status === 'batal'" class="status-label label-batal">🚫 Dibatalkan</span>
                 </div>
               </div>
             </div>
@@ -286,51 +306,73 @@ onMounted(loadData);
       </section>
     </template>
 
-    <!-- Edit Modal -->
-    <div v-if="showEditModal" class="modal-backdrop" @click.self="showEditModal = false">
-      <div class="modal-content modal-wide">
-        <h3>Edit Pesanan</h3>
-        <form class="modal-form" @submit.prevent="handleEdit">
-          <div class="field-grid">
-            <label class="field"><span>Nama Pelanggan</span><input v-model="editForm.customer_name" required /></label>
-            <label class="field"><span>No HP</span><input v-model="editForm.phone" /></label>
-          </div>
-          <label class="field"><span>Alamat</span><input v-model="editForm.address" required /></label>
-          <div class="field-grid">
-            <label class="field"><span>Jenis Air</span><input v-model="editForm.volume" /></label>
-            <label class="field"><span>Jadwal</span><input v-model="editForm.schedule_at" type="datetime-local" /></label>
-          </div>
-          <label class="field"><span>Catatan</span><textarea v-model="editForm.notes" rows="2"></textarea></label>
-          <div class="field-grid">
-            <label class="field"><span>Status</span>
-              <CustomSelect v-model="editForm.status" :options="statusSelectOptions" />
-            </label>
-            <label class="field"><span>Supir</span>
-              <CustomSelect v-model="editForm.assigned_driver_id" :options="driverSelectOptions" placeholder="Pilih Supir" />
-            </label>
-          </div>
-          <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-          <div class="modal-actions">
-            <button type="button" class="btn-outline" @click="showEditModal = false">Batal</button>
-            <button type="submit" class="btn-primary" :disabled="saving">{{ saving ? "Menyimpan..." : "Simpan" }}</button>
-          </div>
-        </form>
+    <!-- Terima Modal (menunggu → diproses) -->
+    <div v-if="showTerimaModal" class="modal-backdrop" @click.self="showTerimaModal = false">
+      <div class="modal-content">
+        <div class="modal-icon-row">
+          <div class="terima-icon-wrapper">📦</div>
+          <h3>Terima Pesanan</h3>
+        </div>
+        <p class="modal-body-text">
+          Pilih supir untuk pesanan dari <strong>{{ terimaTarget?.customer_name }}</strong>. Status akan diubah menjadi <strong>Diproses</strong>.
+        </p>
+        <div class="field">
+          <span>Tugaskan Supir</span>
+          <CustomSelect v-model="terimaDriverId" :options="driverSelectOptions" placeholder="Pilih Supir" />
+        </div>
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <div class="modal-actions">
+          <button class="btn-outline" @click="showTerimaModal = false">Batal</button>
+          <button class="btn-terima-primary" :disabled="terima_loading" @click="handleTerima">
+            {{ terima_loading ? "Memproses..." : "📦 Terima Pesanan" }}
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Delete Modal -->
-    <div v-if="showDeleteModal" class="modal-backdrop" @click.self="showDeleteModal = false">
+    <!-- Approve Modal (menunggu_persetujuan → diproses) -->
+    <div v-if="showApproveModal" class="modal-backdrop" @click.self="showApproveModal = false">
+      <div class="modal-content">
+        <div class="modal-icon-row">
+          <div class="approve-icon-wrapper">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <h3>Setujui Pesanan</h3>
+        </div>
+        <p class="modal-body-text">
+          Konfirmasi supir untuk pesanan dari <strong>{{ approveTarget?.customer_name }}</strong>. Status akan diubah menjadi <strong>Diproses</strong>.
+        </p>
+        <div class="field">
+          <span>Konfirmasi Supir</span>
+          <CustomSelect v-model="approveDriverId" :options="driverSelectOptions" placeholder="Pilih Supir" />
+        </div>
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <div class="modal-actions">
+          <button class="btn-outline" @click="showApproveModal = false">Batal</button>
+          <button class="btn-approve-primary" :disabled="approving" @click="handleApprove">
+            {{ approving ? "Menyetujui..." : "✅ Approve" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tolak Modal (menunggu / menunggu_persetujuan → batal) -->
+    <div v-if="showTolakModal" class="modal-backdrop" @click.self="showTolakModal = false">
       <div class="modal-content">
         <div class="modal-icon-row">
           <div class="danger-icon-wrapper">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </div>
-          <h3>Hapus Pesanan</h3>
+          <h3>Tolak Pesanan</h3>
         </div>
-        <p class="modal-body-text">Yakin ingin menghapus pesanan dari <strong>{{ deleteTarget?.customer_name }}</strong>? Tindakan ini tidak bisa dibatalkan.</p>
+        <p class="modal-body-text">
+          Yakin ingin menolak pesanan dari <strong>{{ tolakTarget?.customer_name }}</strong>? Status akan diubah menjadi <strong>Batal</strong>.
+        </p>
         <div class="modal-actions">
-          <button class="btn-outline" @click="showDeleteModal = false">Batal</button>
-          <button class="btn-danger" :disabled="deleting" @click="handleDelete">{{ deleting ? "Menghapus..." : "Hapus" }}</button>
+          <button class="btn-outline" @click="showTolakModal = false">Kembali</button>
+          <button class="btn-danger" :disabled="tolaking" @click="handleTolak">
+            {{ tolaking ? "Menolak..." : "❌ Tolak" }}
+          </button>
         </div>
       </div>
     </div>
@@ -343,11 +385,6 @@ onMounted(loadData);
 .section-header h2 { margin: 0; font-size: 22px; }
 .section-header p { margin: 6px 0 0; color: #64748b; }
 .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; box-shadow: 0 12px 28px rgba(15,23,42,.08); }
-.filter-wrapper { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; padding: 12px 18px; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05); }
-.filter-wrapper label { font-size: 13px; font-weight: 600; color: #475569; }
-.filter-wrapper select { padding: 8px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #cbd5e1; color: #1e293b; outline: none; background: #fff; cursor: pointer; min-width: 140px; transition: border-color .2s; }
-.filter-wrapper select:focus { border-color: #0f172a; }
-.order-count { margin-left: auto; font-size: 13px; color: #64748b; font-weight: 500; }
 .table-responsive { width: 100%; overflow-x: auto; border-radius: 8px; background: #fff; }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 .data-table th { background: #ffffff; color: #1e293b; font-weight: 700; padding: 16px; border-bottom: 2px solid #f1f5f9; font-size: 13px; white-space: nowrap; }
@@ -361,18 +398,23 @@ onMounted(loadData);
 .cell-bold { font-weight: 600; color: #4f46e5; }
 .cell-muted { color: #64748b; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-date { color: #475569; font-size: 13px; white-space: nowrap; }
-.cell-actions-group { vertical-align: middle; min-width: 220px; }
-.actions-card { display: flex; flex-direction: column; gap: 8px; }
-.actions-quick { display: flex; align-items: stretch; gap: 6px; }
-.quick-selects { display: flex; flex-direction: column; gap: 6px; flex: 1; }
-.actions-manage { display: flex; gap: 6px; border-top: 1px dashed #e2e8f0; padding-top: 8px; }
-.btn-sm { padding: 6px 10px; font-size: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; transition: all .15s ease; white-space: nowrap; }
-.btn-save { background: #0f172a; color: #fff; }
-.btn-save:hover { background: #1e293b; }
-.btn-edit { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; flex: 1; justify-content: center; }
-.btn-edit:hover { background: #dbeafe; }
-.btn-delete { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; flex: 1; justify-content: center; }
-.btn-delete:hover { background: #fee2e2; }
+.cell-actions-group { vertical-align: middle; min-width: 160px; }
+
+/* Action buttons */
+.action-btns { display: flex; gap: 6px; }
+.btn-sm { padding: 7px 12px; font-size: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; transition: all .15s ease; white-space: nowrap; }
+.btn-terima { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.btn-terima:hover { background: #dbeafe; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(29,78,216,0.15); }
+.btn-approve { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.btn-approve:hover { background: #bbf7d0; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(21,128,61,0.15); }
+.btn-tolak { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.btn-tolak:hover { background: #fee2e2; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(220,38,38,0.15); }
+/* Status labels for non-actionable rows */
+.status-label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.label-diproses { background: #eff6ff; color: #1d4ed8; }
+.label-dikirim  { background: #f0fdf4; color: #15803d; }
+.label-selesai  { background: #f0fdf4; color: #166534; }
+.label-batal    { background: #fef2f2; color: #dc2626; }
 
 /* Pagination */
 .pagination-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; font-size: 13px; color: #64748b; border-top: 1px solid #f1f5f9; margin-top: 8px; flex-wrap: wrap; gap: 12px; }
@@ -382,14 +424,18 @@ onMounted(loadData);
 .btn-page:disabled { opacity: 0.5; cursor: not-allowed; }
 .page-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 8px; font-size: 13px; outline: none; cursor: pointer; }
 
-.btn-primary { border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; background: #0f172a; color: #fff; cursor: pointer; font-size: 13px; transition: background .2s; display: inline-flex; align-items: center; }
-.btn-primary:hover { background: #1e293b; }
-.btn-primary:disabled { opacity: .7; cursor: wait; }
 .btn-outline { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; font-weight: 600; color: #0f172a; cursor: pointer; font-size: 13px; transition: all .2s; }
 .btn-outline:hover { background: #f8fafc; }
-.btn-danger { border: none; border-radius: 8px; padding: 8px 12px; font-weight: 600; background: #dc2626; color: #fff; cursor: pointer; font-size: 13px; }
+.btn-danger { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; background: #dc2626; color: #fff; cursor: pointer; font-size: 13px; transition: background .2s; }
 .btn-danger:hover { background: #b91c1c; }
 .btn-danger:disabled { opacity: .7; cursor: wait; }
+.btn-terima-primary { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; background: #1d4ed8; color: #fff; cursor: pointer; font-size: 13px; transition: background .2s; }
+.btn-terima-primary:hover { background: #1e40af; }
+.btn-terima-primary:disabled { opacity: .7; cursor: wait; }
+.btn-approve-primary { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; background: #16a34a; color: #fff; cursor: pointer; font-size: 13px; transition: background .2s; }
+.btn-approve-primary:hover { background: #15803d; }
+.btn-approve-primary:disabled { opacity: .7; cursor: wait; }
+
 .error { color: #dc2626; margin: 4px 0; }
 .success { color: #16a34a; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; }
 .info { color: #64748b; }
@@ -397,18 +443,15 @@ onMounted(loadData);
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; animation: fadeIn .2s ease-out; }
-.modal-content { background: #fff; border-radius: 16px; width: min(480px, 90%); padding: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); animation: slideUp .25s cubic-bezier(.16,1,.3,1); }
-.modal-wide { width: min(600px, 95%); }
-.modal-content h3 { margin: 0 0 16px; font-size: 18px; font-weight: 700; }
-.modal-form { display: flex; flex-direction: column; gap: 12px; }
-.field-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.field input, .field select, .field textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font-size: 14px; outline: none; transition: border-color .2s; font-family: inherit; resize: vertical; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #0f172a; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
-.modal-icon-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.modal-content { background: #fff; border-radius: 16px; width: min(440px, 90%); padding: 24px; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); animation: slideUp .25s cubic-bezier(.16,1,.3,1); display: flex; flex-direction: column; gap: 14px; }
+.modal-content h3 { margin: 0; font-size: 18px; font-weight: 700; }
+.modal-icon-row { display: flex; align-items: center; gap: 12px; }
+.terima-icon-wrapper { background: #eff6ff; font-size: 20px; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.approve-icon-wrapper { background: #dcfce7; color: #16a34a; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .danger-icon-wrapper { background: #fee2e2; color: #dc2626; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.modal-body-text { color: #475569; font-size: 14px; line-height: 1.5; margin: 0 0 16px; }
+.modal-body-text { color: #475569; font-size: 14px; line-height: 1.5; margin: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: #374151; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { transform: translateY(12px) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
 
@@ -422,27 +465,25 @@ onMounted(loadData);
   .mobile-only { display: block !important; }
   .pagination-footer { flex-direction: column; align-items: center; gap: 10px; text-align: center; }
   .pagination-controls { justify-content: center; flex-wrap: wrap; }
-  .field-grid { grid-template-columns: 1fr; }
   .modal-content { width: min(360px, 92%); padding: 20px; border-radius: 20px; }
-  .modal-wide { width: min(400px, 94%); }
   .modal-actions { flex-direction: column-reverse; }
   .modal-actions button { width: 100%; padding: 12px; font-size: 14px; border-radius: 12px; text-align: center; justify-content: center; }
 }
 
-/* ─── Desktop/Mobile helpers ─── */
+/* Desktop/Mobile helpers */
 .desktop-only { display: block; }
 .mobile-only { display: none; }
 
-/* ─── Mobile Filters ─── */
+/* Mobile Filters */
 .mobile-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .mobile-filter-input { width: 100%; padding: 12px 14px; border: 1.5px solid #e2e8f0; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; background: #f8fafc; }
 .mobile-filter-input:focus { border-color: #4f46e5; background: #fff; }
 .mobile-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 
-/* ─── Mobile Empty ─── */
+/* Mobile Empty */
 .mobile-empty { text-align: center; padding: 48px 16px; color: #64748b; font-style: italic; }
 
-/* ─── Mobile Cards ─── */
+/* Mobile Cards */
 .mobile-cards { display: flex; flex-direction: column; gap: 12px; }
 
 .mobile-order-card {
@@ -481,13 +522,8 @@ onMounted(loadData);
   padding: 12px 16px;
   border-top: 1px dashed #e2e8f0;
   background: #fafbfc;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   border-radius: 0 0 16px 16px;
 }
-
-
 
 .moc-actions {
   display: flex;

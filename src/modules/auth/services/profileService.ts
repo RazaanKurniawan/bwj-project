@@ -123,17 +123,13 @@ export const updateProfile = async (userId: string, patch: Partial<Omit<Profile,
 };
 
 export const deleteProfile = async (userId: string) => {
-  const { data, error } = await supabase
-    .from("profiles")
-    .delete()
-    .eq("id", userId)
-    .select("id");
+  // We call a secure RPC function to delete the user from auth.users
+  // This will also cascade and delete the profile from public.profiles
+  const { error } = await supabase.rpc("delete_user_by_admin", {
+    target_user_id: userId
+  });
 
   if (error) {
     throw error;
-  }
-
-  if (!data || data.length === 0) {
-    throw new Error("Gagal menghapus: Akses ditolak (RLS Policy), atau user tidak ditemukan.");
   }
 };
