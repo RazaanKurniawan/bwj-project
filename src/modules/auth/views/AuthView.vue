@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { signInWithEmail, signUpWithEmail, resetPasswordForEmail } from "../services/authService";
+import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, verifyOtp, resendOtp } from "../services/authService";
 import { useAuthStore } from "../stores/authStore";
+import { supabase } from "../../core/supabaseClient";
 import type { UserRole } from "../types";
 
-const mode = ref<"login" | "signup" | "forgot-password">("login");
+const mode = ref<"login" | "signup" | "forgot-password" | "check-email">("login");
 const email = ref("");
 const password = ref("");
 const confirmPassword = ref("");
@@ -17,6 +18,38 @@ const role = ref<UserRole>("customer");
 const errorMsg = ref("");
 const infoMsg = ref("");
 const loading = ref(false);
+
+// OTP Ref Variables
+const otpResendLoading = ref(false);
+
+// Rating aggregation
+const avgRating = ref(4.8); // Fallback default
+const totalReviews = ref(24); // Fallback default
+
+onMounted(async () => {
+  // Ambil data rating secara aman melalui RPC function untuk menghindari RLS block
+  const { data, error } = await supabase.rpc("get_rating_stats");
+  if (!error && data && data.length > 0) {
+    const stats = data[0];
+    if (stats.total_reviews > 0) {
+      totalReviews.value = Number(stats.total_reviews);
+      avgRating.value = Number(stats.avg_rating);
+    }
+  } else {
+    // Fallback jika RPC belum dipasang di database
+    const { data: fallbackData } = await supabase
+      .from("orders")
+      .select("rating")
+      .not("rating", "is", null);
+    if (fallbackData && fallbackData.length > 0) {
+      const ratings = fallbackData.map((r: { rating: number }) => r.rating).filter(Boolean);
+      if (ratings.length > 0) {
+        totalReviews.value = ratings.length;
+        avgRating.value = Math.round((ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length) * 10) / 10;
+      }
+    }
+  }
+});
 
 const router = useRouter();
 const route = useRoute();
@@ -41,7 +74,7 @@ const redirectTo = computed(() => {
   return typeof redirect === "string" ? redirect : defaultRedirect.value;
 });
 
-const switchMode = (nextMode: "login" | "signup" | "forgot-password") => {
+const switchMode = (nextMode: "login" | "signup" | "forgot-password" | "check-email") => {
   mode.value = nextMode;
   errorMsg.value = "";
   infoMsg.value = "";
@@ -69,20 +102,63 @@ const handleLogin = async () => {
   await router.replace(redirectTo.value);
 };
 
+const validateSignup = () => {
+  if (!name.value.trim()) {
+    errorMsg.value = "Nama / Perusahaan wajib diisi.";
+    return false;
+  }
+  if (name.value.trim().length < 3) {
+    errorMsg.value = "Nama minimal 3 karakter.";
+    return false;
+  }
+  if (!phone.value.trim()) {
+    errorMsg.value = "Nomor HP wajib diisi.";
+    return false;
+  }
+  
+  // Clean phone input for numbers only
+  const cleanedPhone = phone.value.trim().replace(/\D/g, "");
+  if (!/^(08|628)[0-9]{8,11}$/.test(cleanedPhone)) {
+    errorMsg.value = "Nomor HP tidak valid. Harus dimulai dengan 08/628 dan panjang 10-14 digit.";
+    return false;
+  }
+  
+  if (!email.value.trim()) {
+    errorMsg.value = "Email wajib diisi.";
+    return false;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
+    errorMsg.value = "Format email tidak valid.";
+    return false;
+  }
+  if (!password.value) {
+    errorMsg.value = "Password wajib diisi.";
+    return false;
+  }
+  if (password.value.length < 6) {
+    errorMsg.value = "Password minimal 6 karakter.";
+    return false;
+  }
+  if (password.value !== confirmPassword.value) {
+    errorMsg.value = "Konfirmasi password tidak cocok.";
+    return false;
+  }
+  return true;
+};
+
 const handleSignup = async () => {
-  loading.value = true;
   errorMsg.value = "";
   infoMsg.value = "";
 
-  if (password.value !== confirmPassword.value) {
-    errorMsg.value = "Konfirmasi password tidak cocok.";
-    loading.value = false;
+  if (!validateSignup()) {
     return;
   }
 
+  loading.value = true;
+
   const { data, error } = await signUpWithEmail(email.value, password.value, {
-    name: name.value || undefined,
-    phone: phone.value || undefined,
+    name: name.value.trim(),
+    phone: phone.value.trim(),
     role: role.value,
   });
 
@@ -94,15 +170,30 @@ const handleSignup = async () => {
 
   if (data.session) {
     await authStore.updateSession(data.session);
-  }
-
-  if (!data.session) {
-    infoMsg.value = "Akun dibuat. Silakan cek email untuk verifikasi.";
-  } else {
+    loading.value = false;
     await router.replace(redirectTo.value);
+  } else {
+    // If no session is returned, it means email confirmation is required
+    infoMsg.value = "Akun berhasil didaftarkan! Silakan cek inbox/spam email Anda untuk verifikasi.";
+    loading.value = false;
+    // Transition to check-email verification mode
+    switchMode("check-email");
   }
+};
 
-  loading.value = false;
+const handleResendConfirmation = async () => {
+  otpResendLoading.value = true;
+  errorMsg.value = "";
+  infoMsg.value = "";
+
+  const { error } = await resendOtp(email.value);
+
+  if (error) {
+    errorMsg.value = error.message;
+  } else {
+    infoMsg.value = "Tautan verifikasi baru telah dikirim ke email Anda.";
+  }
+  otpResendLoading.value = false;
 };
 
 const handleForgotPassword = async () => {
@@ -151,6 +242,27 @@ const handleSubmit = async () => {
         <img src="/logobwj.jpeg" alt="BWJ" class="auth-brand-badge" />
         <h2>Berdikari Water Jaya</h2>
         <p>Pengisian Air Bersih — Depok, Jawa Barat</p>
+
+        <!-- Rating Widget -->
+        <div v-if="totalReviews > 0" class="rating-widget">
+          <div class="rating-stars">
+            <svg
+              v-for="i in 5"
+              :key="i"
+              width="20" height="20" viewBox="0 0 24 24"
+              :fill="i <= Math.round(avgRating) ? '#fbbf24' : 'none'"
+              :stroke="i <= Math.round(avgRating) ? '#fbbf24' : 'rgba(255,255,255,0.4)'"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <div class="rating-info">
+            <span class="rating-score">{{ avgRating.toFixed(1) }}</span>
+            <span class="rating-label">dari {{ totalReviews }} ulasan pelanggan</span>
+          </div>
+        </div>
+
         <div class="auth-image-dots">
           <span class="dot active"></span>
           <span class="dot"></span>
@@ -167,8 +279,8 @@ const handleSubmit = async () => {
             <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-mini" />
             <span class="brand-text-mini">Tracking Air</span>
           </div>
-          <h1>{{ mode === "login" ? "Selamat Datang 👋" : mode === "signup" ? "Buat Akun Baru" : "Lupa Password" }}</h1>
-          <p>{{ mode === "login" ? "Masuk untuk mengelola pesanan depot air." : mode === "signup" ? "Daftarkan akun untuk mulai memesan." : "Masukkan email Anda dan kami akan mengirimkan tautan untuk mengatur ulang password." }}</p>
+          <h1>{{ mode === "login" ? "Selamat Datang 👋" : mode === "signup" ? "Buat Akun Baru" : mode === "check-email" ? "Verifikasi Email Anda ✉️" : "Lupa Password" }}</h1>
+          <p>{{ mode === "login" ? "Masuk untuk mengelola pesanan depot air." : mode === "signup" ? "Daftarkan akun untuk mulai memesan." : mode === "check-email" ? "Tautan verifikasi telah dikirim ke " + email : "Masukkan email Anda dan kami akan mengirimkan tautan untuk mengatur ulang password." }}</p>
         </div>
 
         <form class="auth-form" @submit.prevent="handleSubmit">
@@ -189,14 +301,15 @@ const handleSubmit = async () => {
             </label>
           </div>
 
-          <label class="field">
+          <label class="field" v-if="mode !== 'check-email'">
             <span>Email</span>
             <div class="input-wrapper">
               <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
               <input v-model="email" type="email" placeholder="email@contoh.com" required />
             </div>
           </label>
-          <label class="field" v-if="mode !== 'forgot-password'">
+          
+          <label class="field" v-if="mode !== 'forgot-password' && mode !== 'check-email'">
             <div class="password-label">
               <span>Password</span>
               <button v-if="mode === 'login'" type="button" class="forgot-link" @click="switchMode('forgot-password')">Lupa Password?</button>
@@ -210,6 +323,7 @@ const handleSubmit = async () => {
               </button>
             </div>
           </label>
+          
           <label v-if="mode === 'signup'" class="field">
             <span>Konfirmasi Password</span>
             <div class="input-wrapper">
@@ -222,22 +336,54 @@ const handleSubmit = async () => {
             </div>
           </label>
 
+          <!-- Check Email View -->
+          <div v-if="mode === 'check-email'" class="check-email-container">
+            <div class="check-email-illustration">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+            </div>
+            <p class="check-email-text">
+              Kami telah mengirimkan tautan konfirmasi ke alamat email <strong>{{ email }}</strong>. Silakan klik tautan tersebut untuk mengaktifkan akun Anda.
+            </p>
+            <div class="check-email-resend">
+              <span>Tidak menerima email?</span>
+              <button
+                type="button"
+                class="otp-resend-btn"
+                :disabled="otpResendLoading"
+                @click="handleResendConfirmation"
+              >
+                {{ otpResendLoading ? "Mengirim ulang..." : "Kirim ulang email konfirmasi" }}
+              </button>
+            </div>
+          </div>
+
           <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
           <p v-if="infoMsg" class="info">{{ infoMsg }}</p>
 
-          <button class="btn-primary" type="submit" :disabled="loading">
+          <button v-if="mode !== 'check-email'" class="btn-primary" type="submit" :disabled="loading">
             <span v-if="loading" class="spinner"></span>
             {{ loading ? "Memproses..." : mode === "login" ? "Masuk" : mode === "signup" ? "Daftar" : "Kirim Tautan" }}
           </button>
         </form>
 
         <footer class="card-footer">
-          <span v-if="mode === 'login'">Belum punya akun?</span>
-          <span v-else-if="mode === 'signup'">Sudah punya akun?</span>
-          <span v-else>Kembali ke menu</span>
-          <button class="btn-link" type="button" @click="switchMode(mode === 'login' ? 'signup' : 'login')">
-            {{ mode === "login" ? "Daftar" : "Login" }}
-          </button>
+          <template v-if="mode === 'check-email'">
+            <span>Sudah melakukan verifikasi?</span>
+            <button class="btn-link" type="button" @click="switchMode('login')">
+              Login ke Akun
+            </button>
+          </template>
+          <template v-else>
+            <span v-if="mode === 'login'">Belum punya akun?</span>
+            <span v-else-if="mode === 'signup'">Sudah punya akun?</span>
+            <span v-else>Kembali ke menu</span>
+            <button class="btn-link" type="button" @click="switchMode(mode === 'login' ? 'signup' : 'login')">
+              {{ mode === "login" ? "Daftar" : "Login" }}
+            </button>
+          </template>
         </footer>
       </div>
     </div>
@@ -305,6 +451,41 @@ const handleSubmit = async () => {
   opacity: 0.85;
   line-height: 1.5;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Rating Widget ─── */
+.rating-widget {
+  margin-top: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 2px;
+}
+
+.rating-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rating-score {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fbbf24;
+}
+
+.rating-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .auth-image-dots {
@@ -595,6 +776,74 @@ const handleSubmit = async () => {
   color: #0284c7;
 }
 
+/* ─── Check Email Styles ─── */
+.check-email-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  padding: 16px 8px;
+}
+
+.check-email-illustration {
+  background: rgba(14, 165, 233, 0.08);
+  border-radius: 50%;
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  animation: pulse 2.5s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.85; }
+}
+
+.check-email-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  margin: 0;
+}
+
+.check-email-text strong {
+  color: #0f172a;
+}
+
+.check-email-resend {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 12px;
+}
+
+.otp-resend-btn {
+  border: none;
+  background: transparent;
+  color: #0ea5e9;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+  font-size: 13px;
+}
+
+.otp-resend-btn:hover:not(:disabled) {
+  color: #0284c7;
+}
+
+.otp-resend-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ─── Mobile ─── */
 @media (max-width: 900px) {
   .auth-page {
@@ -602,7 +851,7 @@ const handleSubmit = async () => {
   }
 
   .auth-image-panel {
-    min-height: 240px;
+    min-height: 290px;
     flex: none;
   }
 
@@ -629,7 +878,7 @@ const handleSubmit = async () => {
 
 @media (max-width: 480px) {
   .auth-image-panel {
-    min-height: 180px;
+    min-height: 240px;
   }
 
   .auth-image-content h2 {

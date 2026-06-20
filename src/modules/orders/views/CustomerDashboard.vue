@@ -4,10 +4,9 @@ import { debounce } from "lodash-es";
 import OrderForm from "../components/OrderForm.vue";
 import OrderList from "../components/OrderList.vue";
 import MobileOrderList from "../components/MobileOrderList.vue";
-import MultiOrderMap from "../components/MultiOrderMap.vue";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import type { Order } from "../types";
-import { fetchCustomerOrders, fetchOrdersPaginated } from "../services/orderService";
+import { fetchOrdersPaginated } from "../services/orderService";
 import { useAuthStore } from "../../auth/stores/authStore";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { useRoute, useRouter } from "vue-router";
@@ -30,7 +29,6 @@ const customerPhone = computed(() => authStore.profile.value?.phone ?? null);
 
 const activeOrders = ref<Order[]>([]);
 const historyOrders = ref<Order[]>([]);
-const trackableOrders = ref<Order[]>([]);
 
 const tableFilters = reactive({ customerName: "", address: "", volume: "", scheduleAt: "" });
 const currentPage = ref(1);
@@ -62,13 +60,7 @@ const limitOptions = [
   { label: "20", value: 20 },
 ];
 
-const loadTrackableOrders = async () => {
-  const uid = userId.value;
-  if (!uid) return;
-  // Fetch all for the map
-  const allOrders = await fetchCustomerOrders(uid, "all");
-  trackableOrders.value = allOrders.filter(o => o.status === "diproses" || o.status === "dikirim");
-};
+
 
 const fetchPaginatedData = async () => {
   const uid = userId.value;
@@ -147,14 +139,12 @@ const nextPage = () => { if (currentPage.value < totalPages.value) { currentPage
 
 const handleCreated = (newOrders: Order[]) => {
   fetchPaginatedData();
-  loadTrackableOrders();
   showSuccessModal.value = true;
   activeMainTab.value = "dashboard";
 };
 
 onMounted(async () => {
   await authStore.initAuth();
-  await loadTrackableOrders();
   await fetchPaginatedData();
 });
 </script>
@@ -193,7 +183,6 @@ onMounted(async () => {
       <p v-if="loading" class="info">Memuat pesanan...</p>
 
       <template v-else>
-        <MultiOrderMap v-if="trackableOrders.length > 0" :orders="trackableOrders" />
 
         <!-- Tabs -->
         <div class="tabs-wrapper">

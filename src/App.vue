@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRouter, useRoute } from "vue-router";
 import { signOut } from "./modules/auth/services/authService";
 import { useAuthStore } from "./modules/auth/stores/authStore";
+import WaBubble from "./modules/shared/components/WaBubble.vue";
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -326,6 +327,9 @@ onUnmounted(() => {
         <span class="bottom-nav-label">{{ item.label }}</span>
       </RouterLink>
     </nav>
+
+    <!-- WhatsApp Bubble (only when logged in) -->
+    <WaBubble v-if="isLoggedIn && !isAuthPage" />
   </div>
 </template>
 

@@ -112,9 +112,18 @@ function rowToClaim(row: RewardClaimRow): RewardClaim {
  * Fetch the total number of completed (selesai) orders for a customer from Supabase.
  */
 export const fetchCompletedOrderCount = async (customerId: string): Promise<number> => {
-  const { count, error } = await supabase
+  // Try using the secure RPC bypass function first
+  const { data: rpcCount, error: rpcError } = await supabase
+    .rpc("get_completed_order_count", { cust_id: customerId });
+
+  if (!rpcError && rpcCount !== null) {
+    return Number(rpcCount);
+  }
+
+  // Fallback to client-side query if RPC is not deployed yet or fails
+  const { data, error, count } = await supabase
     .from("orders")
-    .select("id", { count: "exact", head: true })
+    .select("id", { count: "exact" })
     .eq("customer_id", customerId)
     .eq("status", "selesai");
 
@@ -123,7 +132,7 @@ export const fetchCompletedOrderCount = async (customerId: string): Promise<numb
     return 0;
   }
 
-  return count ?? 0;
+  return count ?? data?.length ?? 0;
 };
 
 /**
@@ -232,6 +241,8 @@ export const syncRewardData = async (userId: string): Promise<CustomerRewardData
   );
 
   const accumulated = Math.max(0, totalCompleted - totalConsumed);
+
+  console.log("syncRewardData debug details:", { userId, totalCompleted, totalConsumed, accumulated, claims });
 
   const updated: CustomerRewardData = {
     accumulatedOrders: accumulated,

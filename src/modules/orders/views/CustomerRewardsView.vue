@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useAuthStore } from "../../auth/stores/authStore";
 import {
   REWARD_MILESTONES,
@@ -114,12 +114,32 @@ async function handleClaim(milestone: RewardMilestone) {
   }
 }
 
+watch(
+  userId,
+  async (newUid) => {
+    if (newUid) {
+      loading.value = true;
+      try {
+        rewardData.value = await syncRewardData(newUid);
+      } catch (err) {
+        console.error("Failed to sync reward data:", err);
+      } finally {
+        loading.value = false;
+      }
+    } else {
+      rewardData.value = {
+        accumulatedOrders: 0,
+        totalCompletedOrders: 0,
+        claims: [],
+      };
+      loading.value = false;
+    }
+  },
+  { immediate: true }
+);
+
 onMounted(async () => {
   await authStore.initAuth();
-  if (userId.value) {
-    rewardData.value = await syncRewardData(userId.value);
-  }
-  loading.value = false;
 });
 </script>
 
