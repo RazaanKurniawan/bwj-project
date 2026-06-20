@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, verifyOtp, resendOtp } from "../services/authService";
 import { useAuthStore } from "../stores/authStore";
@@ -26,7 +26,21 @@ const otpResendLoading = ref(false);
 const avgRating = ref(4.8); // Fallback default
 const totalReviews = ref(24); // Fallback default
 
+// Slide Gambar
+const sliderImages = [
+  "/Cuplikan layar 2026-06-08 090900.png",
+  "/WhatsApp Image 2026-06-20 at 16.23.03 (1).jpeg",
+  "/WhatsApp Image 2026-06-20 at 16.23.03.jpeg",
+];
+const currentImageIndex = ref(0);
+let sliderInterval: any = null;
+
 onMounted(async () => {
+  // Slider interval
+  sliderInterval = setInterval(() => {
+    currentImageIndex.value = (currentImageIndex.value + 1) % sliderImages.length;
+  }, 5000);
+
   // Ambil data rating secara aman melalui RPC function untuk menghindari RLS block
   const { data, error } = await supabase.rpc("get_rating_stats");
   if (!error && data && data.length > 0) {
@@ -48,6 +62,12 @@ onMounted(async () => {
         avgRating.value = Math.round((ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length) * 10) / 10;
       }
     }
+  }
+});
+
+onUnmounted(() => {
+  if (sliderInterval) {
+    clearInterval(sliderInterval);
   }
 });
 
@@ -237,6 +257,15 @@ const handleSubmit = async () => {
   <section class="auth-page">
     <!-- Left panel: background image -->
     <div class="auth-image-panel">
+      <!-- Background images slider -->
+      <div 
+        v-for="(img, idx) in sliderImages" 
+        :key="idx" 
+        class="auth-slider-bg"
+        :class="{ active: idx === currentImageIndex }"
+        :style="{ backgroundImage: `url('${img}')` }"
+      ></div>
+
       <div class="auth-image-overlay"></div>
       <div class="auth-image-content">
         <img src="/logobwj.jpeg" alt="BWJ" class="auth-brand-badge" />
@@ -264,9 +293,13 @@ const handleSubmit = async () => {
         </div>
 
         <div class="auth-image-dots">
-          <span class="dot active"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
+          <span 
+            v-for="(img, idx) in sliderImages" 
+            :key="idx" 
+            class="dot" 
+            :class="{ active: idx === currentImageIndex }"
+            @click="currentImageIndex = idx"
+          ></span>
         </div>
       </div>
     </div>
@@ -404,8 +437,23 @@ const handleSubmit = async () => {
   overflow: hidden;
   display: flex;
   align-items: flex-end;
-  background: url("/Cuplikan layar 2026-06-08 090900.png") center/cover no-repeat;
+  background: #0f172a;
   min-height: 100vh;
+}
+
+.auth-slider-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+  z-index: 0;
+}
+
+.auth-slider-bg.active {
+  opacity: 1;
 }
 
 .auth-image-overlay {
@@ -500,6 +548,11 @@ const handleSubmit = async () => {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.35);
   transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.dot:hover {
+  background: rgba(255, 255, 255, 0.65);
 }
 
 .dot.active {
