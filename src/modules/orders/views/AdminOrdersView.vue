@@ -7,6 +7,7 @@ import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import { fetchDrivers } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
+import { formatRupiah, calculateOrderTotal } from "../utils/pricing";
 
 const orders = ref<Order[]>([]);
 const drivers = ref<Profile[]>([]);
@@ -172,12 +173,14 @@ onMounted(loadData);
             <thead>
               <tr>
                 <th>Pelanggan</th><th>Alamat</th><th>Jenis Air</th>
+                <th>Estimasi Harga</th>
                 <th>Jadwal</th><th>Dibuat</th><th>Status</th><th>Supir</th><th>Aksi</th>
               </tr>
               <tr class="filter-row">
                 <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
                 <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
                 <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
+                <th></th>
                 <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
                 <th></th>
                 <th>
@@ -189,13 +192,14 @@ onMounted(loadData);
             </thead>
             <tbody>
               <tr v-if="orders.length === 0">
-                <td colspan="8" class="empty-table-cell">Tidak ada pesanan.</td>
+                <td colspan="9" class="empty-table-cell">Tidak ada pesanan.</td>
               </tr>
               <template v-else>
                 <tr v-for="order in orders" :key="order.id">
                   <td class="cell-bold">{{ order.customer_name }}</td>
                   <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                   <td>{{ order.volume }}</td>
+                  <td class="cell-price">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</td>
                   <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                   <td class="cell-date cell-created">{{ formatDate(order.created_at) }}</td>
                   <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
@@ -262,9 +266,13 @@ onMounted(loadData);
                     <span class="moc-value">{{ order.volume }}</span>
                   </div>
                   <div class="moc-col">
-                    <span class="moc-label">🚗 Supir</span>
-                    <span class="moc-value">{{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? 'Belum ada' }}</span>
+                    <span class="moc-label">💰 Estimasi Harga</span>
+                    <span class="moc-value" style="color: #16a34a; font-weight: 700;">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</span>
                   </div>
+                </div>
+                <div class="moc-row" style="margin-top: 8px;">
+                  <span class="moc-label">🚗 Supir</span>
+                  <span class="moc-value">{{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? 'Belum ada' }}</span>
                 </div>
                 <div class="moc-row">
                   <span class="moc-label">🕐 Dibuat</span>
@@ -405,6 +413,7 @@ onMounted(loadData);
 .cell-muted { color: #64748b; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-date { color: #475569; font-size: 13px; white-space: nowrap; }
 .cell-created { color: #94a3b8; font-size: 12px; }
+.cell-price { color: #16a34a; font-weight: 600; white-space: nowrap; }
 .cell-actions-group { vertical-align: middle; min-width: 160px; }
 
 /* Action buttons */

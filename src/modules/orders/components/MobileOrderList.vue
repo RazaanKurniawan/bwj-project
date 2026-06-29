@@ -2,6 +2,7 @@
 import { RouterLink } from "vue-router";
 import OrderStatusBadge from "./OrderStatusBadge.vue";
 import type { Order } from "../types";
+import { formatRupiah, calculateOrderTotal } from "../utils/pricing";
 
 defineProps<{
   orders: Order[];
@@ -42,6 +43,12 @@ const formatDate = (value: string | null) => {
               <span class="label">Jenis Air</span>
               <span class="value">{{ order.volume }}</span>
             </div>
+            <div class="info-col">
+              <span class="label">Estimasi Harga</span>
+              <span class="value price">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</span>
+            </div>
+          </div>
+          <div class="info-grid" style="margin-top: 10px;">
             <div class="info-col">
               <span class="label">Jadwal</span>
               <span class="value date">{{ formatDate(order.schedule_at) }}</span>
@@ -134,6 +141,11 @@ const formatDate = (value: string | null) => {
 .value.date {
   font-size: 13px;
   color: #475569;
+}
+
+.value.price {
+  color: #16a34a;
+  font-weight: 700;
 }
 
 .card-footer {

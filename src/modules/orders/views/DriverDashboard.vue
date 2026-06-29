@@ -112,6 +112,14 @@ const formatDate = (value: string | null) => {
   return new Date(value).toLocaleString();
 };
 
+const formatRupiah = (num: number) => {
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(num);
+};
+
+const getPrice = (volume: string) => {
+  return volume === 'Air Minum' ? 90000 : 100000;
+};
+
 const fetchPaginatedData = async () => {
   const user = authStore.user.value;
   if (!user) return;
@@ -616,11 +624,15 @@ onBeforeUnmount(() => {
 
           <!-- Pagination Controls for Available Orders -->
           <div class="pagination-footer" v-if="availableOrders.length > 0">
-            <div class="row-count">Menampilkan {{ availableOrders.length }} dari {{ totalCount }} baris data.</div>
+            <span class="row-count">{{ availableOrders.length }} dari {{ totalCount }} data</span>
             <div class="pagination-controls">
-              <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
-              <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
-              <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+              <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+              <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
               <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
             </div>
           </div>
@@ -644,6 +656,7 @@ onBeforeUnmount(() => {
                     <th>Pelanggan</th>
                     <th>Alamat</th>
                     <th>Jenis Air</th>
+                    <th>Harga</th>
                     <th>Jadwal</th>
                     <th>Status</th>
                     <th>Aksi</th>
@@ -651,13 +664,14 @@ onBeforeUnmount(() => {
                 </thead>
                 <tbody>
                   <tr v-if="historyOrders.length === 0">
-                    <td colspan="6" class="empty-table-cell">Belum ada riwayat pesanan.</td>
+                    <td colspan="7" class="empty-table-cell">Belum ada riwayat pesanan.</td>
                   </tr>
                   <template v-else>
                   <tr v-for="order in historyOrders" :key="order.id">
                     <td class="cell-bold">{{ order.customer_name }}</td>
                     <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                     <td>{{ order.volume }}</td>
+                    <td class="cell-price">{{ formatRupiah(getPrice(order.volume)) }}</td>
                     <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                     <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                     <td>
@@ -687,6 +701,12 @@ onBeforeUnmount(() => {
                         <span class="value">{{ order.volume }}</span>
                       </div>
                       <div class="info-col">
+                        <span class="label">Harga</span>
+                        <span class="value" style="color: #16a34a;">{{ formatRupiah(getPrice(order.volume)) }}</span>
+                      </div>
+                    </div>
+                    <div class="info-grid" style="margin-top: 8px;">
+                      <div class="info-col">
                         <span class="label">Jadwal</span>
                         <span class="value date">{{ formatDate(order.schedule_at) }}</span>
                       </div>
@@ -701,11 +721,15 @@ onBeforeUnmount(() => {
 
             <!-- Pagination Controls for History Orders -->
             <div class="pagination-footer" v-if="historyOrders.length > 0">
-              <div class="row-count">Menampilkan {{ historyOrders.length }} dari {{ totalCount }} baris data.</div>
+              <span class="row-count">{{ historyOrders.length }} dari {{ totalCount }} data</span>
               <div class="pagination-controls">
-                <span>Halaman {{ currentPage }} dari {{ totalPages }}</span>
-                <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">&laquo;</button>
-                <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">&raquo;</button>
+                <button class="btn-page" :disabled="currentPage === 1" @click="prevPage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+                <button class="btn-page" :disabled="currentPage === totalPages" @click="nextPage">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
                 <CustomSelect v-model="limit" :options="limitOptions" class="page-select" :small="true" />
               </div>
             </div>
@@ -957,6 +981,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.cell-price {
+  color: #16a34a;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .cell-actions {
   display: flex;
   gap: 6px;
@@ -1134,6 +1164,67 @@ onBeforeUnmount(() => {
   color: #1d4ed8;
 }
 
+/* ========= PAGINATION ========= */
+.pagination-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px 4px;
+  font-size: 13px;
+  color: #64748b;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 12px;
+}
+
+.row-count {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-info {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  min-width: 48px;
+  text-align: center;
+}
+
+.btn-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #475569;
+  transition: all 0.2s ease;
+}
+
+.btn-page:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.btn-page:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.page-select {
+  margin-left: 4px;
+}
+
 /* ========= RESPONSIVE HELPERS ========= */
 .desktop-only {
   display: block;
@@ -1154,10 +1245,9 @@ onBeforeUnmount(() => {
   .pagination-footer {
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     text-align: center;
-    margin-top: 20px;
-    padding-top: 20px;
+    padding: 16px 8px 4px;
   }
   
   .pagination-controls {

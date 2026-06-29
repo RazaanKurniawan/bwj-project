@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import type { Order } from "../types";
 import { createOrder } from "../services/orderService";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
+import { formatRupiah, getPricePerTank, calculateDistance } from "../utils/pricing";
 
 const props = defineProps<{
   customerId: string;
@@ -39,23 +40,9 @@ const marker = shallowRef<L.Marker | null>(null);
 const DEPOT_LAT = -6.432513175969628;
 const DEPOT_LNG = 106.88722928789123;
 
-const formatRupiah = (num: number) => {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(num);
-};
-
-const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-};
-
 const estQty = computed(() => isCustomTruck.value ? customTruckCount.value : Number(truckCount.value));
-const estBase = computed(() => estQty.value * 100000);
+const pricePerTank = computed(() => getPricePerTank(volume.value));
+const estBase = computed(() => estQty.value * pricePerTank.value);
 const estDist = computed(() => {
   if (customerLat.value && customerLng.value) {
     return calculateDistance(DEPOT_LAT, DEPOT_LNG, customerLat.value, customerLng.value).toFixed(1);
@@ -294,7 +281,7 @@ const handleSubmit = async () => {
       <div v-if="customerLat && customerLng" class="estimation-box">
         <h4 class="est-title">🧾 Rincian Estimasi Harga</h4>
         <div class="est-row">
-          <span class="est-label">Harga Dasar ({{ estQty }} Truk &times; Rp 100.000)</span>
+          <span class="est-label">Harga Dasar ({{ estQty }} Truk &times; {{ formatRupiah(pricePerTank) }})</span>
           <span class="est-value">{{ formatRupiah(estBase) }}</span>
         </div>
         <div class="est-row">

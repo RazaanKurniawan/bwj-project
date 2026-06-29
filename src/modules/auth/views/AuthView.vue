@@ -23,8 +23,8 @@ const loading = ref(false);
 const otpResendLoading = ref(false);
 
 // Rating aggregation
-const avgRating = ref(4.8); // Fallback default
-const totalReviews = ref(24); // Fallback default
+const avgRating = ref(0);
+const totalReviews = ref(0);
 
 // Slide Gambar
 const sliderImages = [

@@ -10,6 +10,7 @@ import { fetchOrdersPaginated } from "../services/orderService";
 import { useAuthStore } from "../../auth/stores/authStore";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { useRoute, useRouter } from "vue-router";
+import { formatRupiah, calculateOrderTotal } from "../utils/pricing";
 
 const route = useRoute();
 const router = useRouter();
@@ -220,6 +221,7 @@ onMounted(async () => {
                   <th>Pelanggan</th>
                   <th>Alamat</th>
                   <th>Jenis Air</th>
+                  <th>Estimasi Harga</th>
                   <th>Jadwal</th>
                   <th>Status</th>
                   <th>Aksi</th>
@@ -228,6 +230,7 @@ onMounted(async () => {
                   <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
                   <th><input type="text" v-model="tableFilters.address" placeholder="Cari Alamat..." /></th>
                   <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
+                  <th></th>
                   <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
                   <th>
                     <CustomSelect v-model="selectedStatus" :options="statusFilterOptions" class="filter-select" />
@@ -237,7 +240,7 @@ onMounted(async () => {
               </thead>
               <tbody>
                 <tr v-if="(activeTab === 'active' ? activeOrders.length : historyOrders.length) === 0">
-                  <td colspan="6" class="empty-table-cell">
+                  <td colspan="7" class="empty-table-cell">
                     {{ activeTab === 'active' ? 'Tidak ada pesanan aktif.' : 'Belum ada riwayat pesanan.' }}
                   </td>
                 </tr>
@@ -246,6 +249,7 @@ onMounted(async () => {
                     <td class="cell-bold">{{ order.customer_name }}</td>
                     <td class="cell-muted" :title="order.address">{{ order.address }}</td>
                     <td>{{ order.volume }}</td>
+                    <td class="cell-price">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</td>
                     <td class="cell-date">{{ order.schedule_at ? new Date(order.schedule_at).toLocaleString() : '-' }}</td>
                     <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                     <td>
@@ -536,6 +540,7 @@ onMounted(async () => {
 .cell-bold { font-weight: 600; color: #4f46e5; }
 .cell-muted { color: #64748b; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-date { color: #475569; font-size: 13px; white-space: nowrap; }
+.cell-price { color: #16a34a; font-weight: 600; white-space: nowrap; }
 
 .btn-detail { display: inline-block; color: #1d4ed8; font-weight: 600; text-decoration: none; background: #eff6ff; padding: 6px 12px; border-radius: 8px; transition: all 0.2s ease; }
 .btn-detail:hover { background: #dbeafe; color: #1e40af; }

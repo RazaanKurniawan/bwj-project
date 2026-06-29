@@ -8,6 +8,7 @@ import { fetchOrderById, submitReview, updateOrderStatus } from "../services/ord
 import { fetchProfile } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
 import { useAuthStore } from "../../auth/stores/authStore";
+import { formatRupiah, getPricePerTank, calculateDistance, calculateOrderTotal } from "../utils/pricing";
 
 const route = useRoute();
 const { profile } = useAuthStore();
@@ -92,6 +93,17 @@ const getWaLink = (phone: string) => {
   return `https://wa.me/${cleanPhone}`;
 };
 
+const DEPOT_LAT = -6.432513175969628;
+const DEPOT_LNG = 106.88722928789123;
+
+const getDeliveryFee = (orderObj: Order) => {
+  if (orderObj.customer_lat && orderObj.customer_lng) {
+    const dist = calculateDistance(DEPOT_LAT, DEPOT_LNG, orderObj.customer_lat, orderObj.customer_lng);
+    return Math.round(dist * 5000);
+  }
+  return 0;
+};
+
 onMounted(loadOrder);
 </script>
 
@@ -126,6 +138,18 @@ onMounted(loadOrder);
         <div>
           <span class="label">Jenis Air</span>
           <span class="value">{{ order.volume }}</span>
+        </div>
+        <div>
+          <span class="label">Harga Dasar</span>
+          <span class="value">{{ formatRupiah(getPricePerTank(order.volume)) }}</span>
+        </div>
+        <div>
+          <span class="label">Ongkir</span>
+          <span class="value">{{ formatRupiah(getDeliveryFee(order)) }}</span>
+        </div>
+        <div>
+          <span class="label">Total Pembayaran</span>
+          <span class="value price-value">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</span>
         </div>
         <div>
           <span class="label">Jadwal</span>
@@ -412,6 +436,11 @@ onMounted(loadOrder);
   display: block;
   margin-top: 6px;
   font-weight: 600;
+}
+
+.price-value {
+  color: #16a34a;
+  font-weight: 700;
 }
 
 .error {
