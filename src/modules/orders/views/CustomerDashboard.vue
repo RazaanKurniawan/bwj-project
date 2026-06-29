@@ -223,6 +223,7 @@ onMounted(async () => {
                   <th>Jenis Air</th>
                   <th>Estimasi Harga</th>
                   <th>Jadwal</th>
+                  <th>Pembayaran</th>
                   <th>Status</th>
                   <th>Aksi</th>
                 </tr>
@@ -232,6 +233,7 @@ onMounted(async () => {
                   <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
                   <th></th>
                   <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
+                  <th></th>
                   <th>
                     <CustomSelect v-model="selectedStatus" :options="statusFilterOptions" class="filter-select" />
                   </th>
@@ -240,7 +242,7 @@ onMounted(async () => {
               </thead>
               <tbody>
                 <tr v-if="(activeTab === 'active' ? activeOrders.length : historyOrders.length) === 0">
-                  <td colspan="7" class="empty-table-cell">
+                  <td colspan="8" class="empty-table-cell">
                     {{ activeTab === 'active' ? 'Tidak ada pesanan aktif.' : 'Belum ada riwayat pesanan.' }}
                   </td>
                 </tr>
@@ -251,6 +253,14 @@ onMounted(async () => {
                     <td>{{ order.volume }}</td>
                     <td class="cell-price">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</td>
                     <td class="cell-date">{{ order.schedule_at ? new Date(order.schedule_at).toLocaleString() : '-' }}</td>
+                    <td>
+                      <div style="font-weight: 600; font-size: 13px;">
+                        {{ order.payment_method === 'transfer' ? '🏦 Transfer' : '💵 Cash' }}
+                      </div>
+                      <div :class="order.payment_status === 'lunas' ? 'text-success' : order.payment_status === 'menunggu_verifikasi' ? 'text-warning' : 'text-danger'" style="font-size: 11px; font-weight: bold; margin-top: 2px;">
+                        {{ order.payment_status === 'lunas' ? '● Lunas' : order.payment_status === 'menunggu_verifikasi' ? '● Menunggu Verifikasi' : '● Belum Bayar' }}
+                      </div>
+                    </td>
                     <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                     <td>
                       <router-link class="btn-detail" :to="`/orders/${order.id}`">Detail</router-link>
@@ -648,5 +658,15 @@ onMounted(async () => {
     padding: 28px 20px;
     border-radius: 20px;
   }
+}
+
+.text-success {
+  color: #16a34a;
+}
+.text-warning {
+  color: #d97706;
+}
+.text-danger {
+  color: #dc2626;
 }
 </style>

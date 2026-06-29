@@ -2,12 +2,13 @@
 import { onMounted, reactive, ref, watch, computed } from "vue";
 import { debounce } from "lodash-es";
 import type { Order, OrderStatus } from "../types";
-import { fetchOrdersPaginated, updateOrder } from "../services/orderService";
+import { fetchOrdersPaginated, updateOrder, verifyPayment, rejectPayment } from "../services/orderService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import { fetchDrivers } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { formatRupiah, calculateOrderTotal } from "../utils/pricing";
+import { useAuthStore } from "../../auth/stores/authStore";
 
 const orders = ref<Order[]>([]);
 const drivers = ref<Profile[]>([]);
@@ -148,6 +149,54 @@ const handleTolak = async () => {
   finally { tolaking.value = false; }
 };
 
+const authStore = useAuthStore();
+const { profile } = authStore;
+
+const showVerifyPaymentModal = ref(false);
+const verifyPaymentTarget = ref<Order | null>(null);
+const verifyingPayment = ref(false);
+
+const openVerifyPayment = (order: Order) => {
+  verifyPaymentTarget.value = order;
+  showVerifyPaymentModal.value = true;
+};
+
+const handleApprovePayment = async () => {
+  if (!verifyPaymentTarget.value || !profile.value?.id) return;
+  verifyingPayment.value = true;
+  errorMsg.value = "";
+  try {
+    await verifyPayment(verifyPaymentTarget.value.id, profile.value.id);
+    successMsg.value = "Pembayaran berhasil diverifikasi.";
+    setTimeout(() => (successMsg.value = ""), 3000);
+    showVerifyPaymentModal.value = false;
+    verifyPaymentTarget.value = null;
+    await loadData();
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : "Gagal memverifikasi pembayaran.";
+  } finally {
+    verifyingPayment.value = false;
+  }
+};
+
+const handleRejectPayment = async () => {
+  if (!verifyPaymentTarget.value) return;
+  verifyingPayment.value = true;
+  errorMsg.value = "";
+  try {
+    await rejectPayment(verifyPaymentTarget.value.id);
+    successMsg.value = "Pembayaran ditolak.";
+    setTimeout(() => (successMsg.value = ""), 3000);
+    showVerifyPaymentModal.value = false;
+    verifyPaymentTarget.value = null;
+    await loadData();
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : "Gagal menolak pembayaran.";
+  } finally {
+    verifyingPayment.value = false;
+  }
+};
+
 onMounted(loadData);
 </script>
 
@@ -174,7 +223,7 @@ onMounted(loadData);
               <tr>
                 <th>Pelanggan</th><th>Alamat</th><th>Jenis Air</th>
                 <th>Estimasi Harga</th>
-                <th>Jadwal</th><th>Dibuat</th><th>Status</th><th>Supir</th><th>Aksi</th>
+                <th>Jadwal</th><th>Dibuat</th><th>Pembayaran</th><th>Status</th><th>Supir</th><th>Aksi</th>
               </tr>
               <tr class="filter-row">
                 <th><input type="text" v-model="tableFilters.customerName" placeholder="Cari Pelanggan..." /></th>
@@ -182,6 +231,7 @@ onMounted(loadData);
                 <th><input type="text" v-model="tableFilters.volume" placeholder="Cari Jenis Air..." /></th>
                 <th></th>
                 <th><input type="date" v-model="tableFilters.scheduleAt" /></th>
+                <th></th>
                 <th></th>
                 <th>
                   <CustomSelect v-model="selectedFilter" :options="statusFilterOptions" class="csel-filter-width" />
@@ -192,7 +242,7 @@ onMounted(loadData);
             </thead>
             <tbody>
               <tr v-if="orders.length === 0">
-                <td colspan="9" class="empty-table-cell">Tidak ada pesanan.</td>
+                <td colspan="10" class="empty-table-cell">Tidak ada pesanan.</td>
               </tr>
               <template v-else>
                 <tr v-for="order in orders" :key="order.id">
@@ -202,11 +252,23 @@ onMounted(loadData);
                   <td class="cell-price">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</td>
                   <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                   <td class="cell-date cell-created">{{ formatDate(order.created_at) }}</td>
+                  <td>
+                    <div style="font-weight: 600; font-size: 13px;">
+                      {{ order.payment_method === 'transfer' ? '🏦 Transfer' : '💵 Cash' }}
+                    </div>
+                    <div :class="order.payment_status === 'lunas' ? 'text-success' : order.payment_status === 'menunggu_verifikasi' ? 'text-warning' : 'text-danger'" style="font-size: 11px; font-weight: bold; margin-top: 2px;">
+                      {{ order.payment_status === 'lunas' ? '● Lunas' : order.payment_status === 'menunggu_verifikasi' ? '● Butuh Verifikasi' : '● Belum Bayar' }}
+                    </div>
+                  </td>
                   <td><OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" /></td>
                   <td class="cell-muted">
                     {{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? "Belum ada" }}
                   </td>
                   <td class="cell-actions-group">
+                    <!-- payment verification if pending -->
+                    <div v-if="order.payment_method === 'transfer' && order.payment_status === 'menunggu_verifikasi'" style="margin-bottom: 6px;">
+                      <button class="btn-sm btn-verify" @click="openVerifyPayment(order)">🔍 Cek Bayar</button>
+                    </div>
                     <!-- menunggu: Terima / Tolak -->
                     <div v-if="order.status === 'menunggu'" class="action-btns">
                       <button class="btn-sm btn-terima" @click="openTerima(order)">📦 Terima</button>
@@ -274,6 +336,15 @@ onMounted(loadData);
                   <span class="moc-label">🚗 Supir</span>
                   <span class="moc-value">{{ drivers.find(d => d.id === order.assigned_driver_id)?.name ?? 'Belum ada' }}</span>
                 </div>
+                <div class="moc-row" style="margin-top: 8px;">
+                  <span class="moc-label">💳 Pembayaran</span>
+                  <span class="moc-value" style="display: flex; flex-direction: column; gap: 2px;">
+                    <strong>{{ order.payment_method === 'transfer' ? '🏦 Transfer Bank' : '💵 Cash' }}</strong>
+                    <span :class="order.payment_status === 'lunas' ? 'text-success' : order.payment_status === 'menunggu_verifikasi' ? 'text-warning' : 'text-danger'" style="font-size: 12px; font-weight: bold;">
+                      {{ order.payment_status === 'lunas' ? '● Lunas' : order.payment_status === 'menunggu_verifikasi' ? '● Butuh Verifikasi' : '● Belum Bayar' }}
+                    </span>
+                  </span>
+                </div>
                 <div class="moc-row">
                   <span class="moc-label">🕐 Dibuat</span>
                   <span class="moc-value moc-date">{{ formatDate(order.created_at) }}</span>
@@ -284,7 +355,11 @@ onMounted(loadData);
                 </div>
               </div>
 
-              <div class="moc-footer">
+              <div class="moc-footer" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- payment verification for transfer if pending -->
+                <div v-if="order.payment_method === 'transfer' && order.payment_status === 'menunggu_verifikasi'" class="moc-actions" style="width: 100%;">
+                  <button class="btn-sm btn-verify" style="width: 100%;" @click="openVerifyPayment(order)">🔍 Cek Pembayaran</button>
+                </div>
                 <!-- menunggu -->
                 <div v-if="order.status === 'menunggu'" class="moc-actions">
                   <button class="btn-sm btn-terima" @click="openTerima(order)">📦 Terima</button>
@@ -390,6 +465,42 @@ onMounted(loadData);
         </div>
       </div>
     </div>
+
+    <!-- Verify Payment Modal -->
+    <div v-if="showVerifyPaymentModal" class="modal-backdrop" @click.self="showVerifyPaymentModal = false">
+      <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-icon-row">
+          <div class="approve-icon-wrapper" style="background: #eff6ff; color: #1d4ed8;">🔍</div>
+          <h3>Verifikasi Pembayaran</h3>
+        </div>
+        <p class="modal-body-text" style="margin-bottom: 8px;">
+          Harap periksa bukti pembayaran transfer dari pelanggan <strong>{{ verifyPaymentTarget?.customer_name }}</strong>.
+        </p>
+
+        <div v-if="verifyPaymentTarget?.payment_proof_url" class="proof-image-container" style="text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px;">
+          <img :src="verifyPaymentTarget.payment_proof_url" alt="Bukti Transfer" style="max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px;" />
+        </div>
+        <div v-else class="info" style="text-align: center; padding: 12px 0;">Tidak ada bukti transfer diunggah.</div>
+
+        <div class="bank-info-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-top: 4px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+            <span>Metode Bayar:</span><strong>🏦 Transfer Bank</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px;">
+            <span>Total Pembayaran:</span><strong style="color: #16a34a;">{{ formatRupiah(verifyPaymentTarget?.payment_amount || 0) }}</strong>
+          </div>
+        </div>
+
+        <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+        <div class="modal-actions">
+          <button class="btn-outline" @click="showVerifyPaymentModal = false" :disabled="verifyingPayment">Batal</button>
+          <button class="btn-danger" @click="handleRejectPayment" :disabled="verifyingPayment">❌ Tolak</button>
+          <button class="btn-approve-primary" @click="handleApprovePayment" :disabled="verifyingPayment">
+            {{ verifyingPayment ? "Memproses..." : "✅ Setujui & Lunas" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -425,6 +536,8 @@ onMounted(loadData);
 .btn-approve:hover { background: #bbf7d0; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(21,128,61,0.15); }
 .btn-tolak { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 .btn-tolak:hover { background: #fee2e2; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(220,38,38,0.15); }
+.btn-verify { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.btn-verify:hover { background: #dcfce7; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(22,163,74,0.15); }
 /* Status labels for non-actionable rows */
 .status-label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .label-diproses { background: #eff6ff; color: #1d4ed8; }

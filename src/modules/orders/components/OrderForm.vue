@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, shallowRef } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { Order } from "../types";
+import type { Order, PaymentMethod } from "../types";
 import { createOrder } from "../services/orderService";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
 import { formatRupiah, getPricePerTank, calculateDistance } from "../utils/pricing";
@@ -26,6 +26,7 @@ const truckCount = ref<number | string>(1);
 const customTruckCount = ref<number>(1);
 const isCustomTruck = ref(false);
 const notes = ref("");
+const paymentMethod = ref<PaymentMethod>("cash");
 
 const gettingLocation = ref(false);
 const locError = ref("");
@@ -145,6 +146,7 @@ const resetForm = () => {
   customTruckCount.value = 1;
   isCustomTruck.value = false;
   notes.value = "";
+  paymentMethod.value = "cash";
 };
 
 const handleSubmit = async () => {
@@ -186,6 +188,12 @@ const handleSubmit = async () => {
         proof_url: null,
         rating: null,
         review: null,
+        payment_method: paymentMethod.value,
+        payment_status: "belum_bayar",
+        payment_proof_url: null,
+        payment_verified_at: null,
+        payment_verified_by: null,
+        payment_amount: estTotal.value,
       });
       newOrders.push(order);
     }
@@ -295,6 +303,56 @@ const handleSubmit = async () => {
         </div>
         <p class="est-note">*Ini hanya estimasi kasar. Harga final dapat berbeda.</p>
       </div>
+
+      <!-- Payment Method Selector -->
+      <div class="field payment-field">
+        <span>💰 Metode Pembayaran</span>
+        <div class="payment-options">
+          <label
+            class="payment-option"
+            :class="{ active: paymentMethod === 'cash' }"
+          >
+            <input type="radio" v-model="paymentMethod" value="cash" />
+            <div class="payment-option-content">
+              <div class="payment-icon">💵</div>
+              <div class="payment-info">
+                <strong>Cash (COD)</strong>
+                <span>Bayar ke supir saat tiba</span>
+              </div>
+            </div>
+          </label>
+          <label
+            class="payment-option"
+            :class="{ active: paymentMethod === 'transfer' }"
+          >
+            <input type="radio" v-model="paymentMethod" value="transfer" />
+            <div class="payment-option-content">
+              <div class="payment-icon">🏦</div>
+              <div class="payment-info">
+                <strong>Transfer Bank</strong>
+                <span>Bayar dulu, baru diproses</span>
+              </div>
+            </div>
+          </label>
+        </div>
+        <div v-if="paymentMethod === 'transfer'" class="transfer-info-box">
+          <p class="transfer-title">📋 Info Rekening Tujuan</p>
+          <div class="bank-detail">
+            <span class="bank-label">Bank</span>
+            <span class="bank-value">BCA</span>
+          </div>
+          <div class="bank-detail">
+            <span class="bank-label">No. Rekening</span>
+            <span class="bank-value">123-456-7890</span>
+          </div>
+          <div class="bank-detail">
+            <span class="bank-label">Atas Nama</span>
+            <span class="bank-value">PT Bintang Water Jaya</span>
+          </div>
+          <p class="transfer-note">⚠️ Pesanan baru diproses setelah bukti transfer diverifikasi admin.</p>
+        </div>
+      </div>
+
       <label class="field">
         <span>Catatan</span>
         <textarea v-model="notes" rows="2" placeholder="Contoh: Tolong hubungi sebelum sampai"></textarea>
@@ -513,5 +571,116 @@ header p {
   background: #fee2e2;
   color: #dc2626;
   border-color: #fca5a5;
+}
+
+/* ─── Payment Selector ─── */
+.payment-field {
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.payment-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.payment-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.payment-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.payment-option-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  transition: all 0.2s;
+}
+
+.payment-option.active .payment-option-content {
+  border-color: #0f172a;
+  background: #f0f9ff;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
+}
+
+.payment-option:hover .payment-option-content {
+  border-color: #94a3b8;
+}
+
+.payment-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.payment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.payment-info strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.payment-info span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.transfer-info-box {
+  margin-top: 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.transfer-title {
+  margin: 0 0 10px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.bank-detail {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed #fde68a;
+}
+
+.bank-detail:last-of-type {
+  border-bottom: none;
+}
+
+.bank-label {
+  color: #92400e;
+}
+
+.bank-value {
+  font-weight: 700;
+  color: #78350f;
+}
+
+.transfer-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #b45309;
+  font-style: italic;
 }
 </style>

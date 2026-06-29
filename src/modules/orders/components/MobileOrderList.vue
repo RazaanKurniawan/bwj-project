@@ -53,6 +53,15 @@ const formatDate = (value: string | null) => {
               <span class="label">Jadwal</span>
               <span class="value date">{{ formatDate(order.schedule_at) }}</span>
             </div>
+            <div class="info-col">
+              <span class="label">Pembayaran</span>
+              <span class="value" style="display: flex; flex-direction: column; gap: 2px; font-size: 13px;">
+                <span>{{ order.payment_method === 'transfer' ? '🏦 Transfer' : '💵 Cash' }}</span>
+                <span :class="order.payment_status === 'lunas' ? 'text-success' : order.payment_status === 'menunggu_verifikasi' ? 'text-warning' : 'text-danger'" style="font-size: 11px; font-weight: bold;">
+                  {{ order.payment_status === 'lunas' ? 'Lunas' : order.payment_status === 'menunggu_verifikasi' ? 'Menunggu' : 'Belum Bayar' }}
+                </span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -67,6 +76,16 @@ const formatDate = (value: string | null) => {
 </template>
 
 <style scoped>
+.text-success {
+  color: #16a34a;
+}
+.text-warning {
+  color: #d97706;
+}
+.text-danger {
+  color: #dc2626;
+}
+
 .mobile-order-list {
   margin-top: 16px;
 }

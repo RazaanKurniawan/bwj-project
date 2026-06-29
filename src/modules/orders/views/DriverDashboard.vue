@@ -8,7 +8,8 @@ import {
   fetchDriverOrders,
   updateOrderLocation,
   updateOrderStatus,
-  uploadProof
+  uploadProof,
+  confirmCashPayment
 } from "../services/orderService";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import CustomSelect from "../../shared/components/CustomSelect.vue";
@@ -219,6 +220,25 @@ const handleClaim = (orderId: string) => {
   );
 };
 
+const handleConfirmCash = (orderId: string, amount: number) => {
+  triggerConfirmation(
+    "Konfirmasi Terima Uang Tunai",
+    `Apakah kamu yakin telah menerima pembayaran tunai sebesar ${formatRupiah(amount)} untuk pesanan ini?`,
+    async () => {
+      errorMsg.value = "";
+      successMsg.value = "";
+      try {
+        await confirmCashPayment(orderId);
+        await refresh();
+        successMsg.value = "Pembayaran tunai berhasil dikonfirmasi.";
+        setTimeout(() => { successMsg.value = ""; }, 5000);
+      } catch (error) {
+        errorMsg.value = error instanceof Error ? error.message : "Gagal mengonfirmasi pembayaran.";
+      }
+    }
+  );
+};
+
 const advanceStatus = (orderId: string, currentStatus: OrderStatus) => {
   const targetStatus = currentStatus === "diproses" ? "dikirim" : "selesai";
 
@@ -383,6 +403,7 @@ onBeforeUnmount(() => {
                     <th>Alamat</th>
                     <th>Jenis Air</th>
                     <th>Jadwal</th>
+                    <th>Pembayaran</th>
                     <th>Status</th>
                     <th>Aksi</th>
                   </tr>
@@ -394,15 +415,33 @@ onBeforeUnmount(() => {
                     <td>{{ order.volume }}</td>
                     <td class="cell-date">{{ formatDate(order.schedule_at) }}</td>
                     <td>
+                      <div style="font-weight: 600; font-size: 13px;">
+                        {{ order.payment_method === 'transfer' ? '🏦 Transfer' : '💵 Cash' }}
+                      </div>
+                      <div :class="order.payment_status === 'lunas' ? 'text-success' : 'text-danger'" style="font-size: 11px; font-weight: bold; margin-top: 2px;">
+                        {{ order.payment_status === 'lunas' ? '● Lunas' : '● Belum Lunas' }}
+                      </div>
+                    </td>
+                    <td>
                       <OrderStatusBadge :status="order.status === 'menunggu' && order.assigned_driver_id ? 'menunggu_persetujuan' : order.status" />
                     </td>
                     <td class="cell-actions">
                       <button 
                         v-if="order.status === 'diproses' || order.status === 'dikirim'"
                         class="btn-primary" 
+                        :disabled="order.status === 'dikirim' && order.payment_method === 'cash' && order.payment_status === 'belum_bayar'"
                         @click="advanceStatus(order.id, order.status)"
+                        :title="order.status === 'dikirim' && order.payment_method === 'cash' && order.payment_status === 'belum_bayar' ? 'Harus konfirmasi terima cash terlebih dahulu' : ''"
                       >
                         {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
+                      </button>
+                      <button 
+                        v-if="order.status === 'dikirim' && order.payment_method === 'cash' && order.payment_status === 'belum_bayar'"
+                        class="btn-success btn-sm"
+                        @click="handleConfirmCash(order.id, order.payment_amount || 0)"
+                        style="margin-left: 6px;"
+                      >
+                        Terima Cash
                       </button>
                       <button 
                         class="btn-outline icon-btn" 
@@ -450,15 +489,35 @@ onBeforeUnmount(() => {
                         <span class="value date">{{ formatDate(order.schedule_at) }}</span>
                       </div>
                     </div>
+                    <div class="info-grid" style="margin-top: 8px;">
+                      <div class="info-col">
+                        <span class="label">Metode Pembayaran</span>
+                        <span class="value">{{ order.payment_method === 'transfer' ? '🏦 Transfer' : '💵 Cash (COD)' }}</span>
+                      </div>
+                      <div class="info-col">
+                        <span class="label">Status Pembayaran</span>
+                        <span class="value" :class="order.payment_status === 'lunas' ? 'text-success' : 'text-danger'" style="font-weight: bold;">
+                          {{ order.payment_status === 'lunas' ? 'Lunas' : 'Belum Lunas' }}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <div class="mc-footer">
-                    <div class="mc-actions" style="width: 100%;">
+                    <div class="mc-actions" style="width: 100%; display: flex; gap: 8px;">
                       <button 
                         v-if="order.status === 'diproses' || order.status === 'dikirim'"
                         class="btn-primary flex-1" 
+                        :disabled="order.status === 'dikirim' && order.payment_method === 'cash' && order.payment_status === 'belum_bayar'"
                         @click="advanceStatus(order.id, order.status)"
                       >
                         {{ order.status === 'diproses' ? 'Kirim Pesanan' : 'Selesaikan' }}
+                      </button>
+                      <button 
+                        v-if="order.status === 'dikirim' && order.payment_method === 'cash' && order.payment_status === 'belum_bayar'"
+                        class="btn-success flex-1"
+                        @click="handleConfirmCash(order.id, order.payment_amount || 0)"
+                      >
+                        Terima Cash
                       </button>
                       <button 
                         class="btn-outline icon-btn" 
@@ -1028,6 +1087,25 @@ onBeforeUnmount(() => {
 
 .btn-secondary:hover {
   background: #1e40af;
+}
+
+.btn-success {
+  background: #16a34a;
+  color: #fff;
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
+.btn-success:disabled {
+  background: #86efac;
+  cursor: not-allowed;
+}
+
+.btn-success.btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .btn-outline {

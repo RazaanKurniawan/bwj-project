@@ -41,6 +41,7 @@ const handleMouseLeave = () => {
 
 // Detect if current route is the auth/login page
 const isAuthPage = computed(() => route.path === "/login");
+const isLandingPage = computed(() => route.path === "/");
 
 const handleLogout = async () => {
   sidebarOpen.value = false;
@@ -126,11 +127,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'no-sidebar': isAuthPage }">
+  <div class="app-shell" :class="{ 'no-sidebar': isAuthPage || isLandingPage }">
     <!-- Sidebar overlay (mobile) -->
     <Transition name="fade">
       <div
-        v-if="sidebarOpen && isLoggedIn && !isAuthPage"
+        v-if="sidebarOpen && isLoggedIn && !isAuthPage && !isLandingPage"
         class="sidebar-overlay"
         @click="sidebarOpen = false"
       ></div>
@@ -138,7 +139,7 @@ onUnmounted(() => {
 
     <!-- Sidebar -->
     <aside
-      v-if="isLoggedIn && !isAuthPage"
+      v-if="isLoggedIn && !isAuthPage && !isLandingPage"
       class="sidebar"
       :class="{ open: sidebarOpen }"
       @mouseenter="handleMouseEnter"
@@ -246,9 +247,9 @@ onUnmounted(() => {
     </aside>
 
     <!-- Main content area -->
-    <div class="app-main" :class="{ 'with-sidebar': isLoggedIn && !isAuthPage }">
+    <div class="app-main" :class="{ 'with-sidebar': isLoggedIn && !isAuthPage && !isLandingPage }">
       <!-- Top bar (only on mobile when logged in, or always when on auth page) -->
-      <header v-if="!isAuthPage && isLoggedIn" class="app-topbar mobile-only">
+      <header v-if="!isAuthPage && !isLandingPage && isLoggedIn" class="app-topbar mobile-only">
         <div class="topbar-brand">
           <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-sm-img" />
           <span class="brand-title-sm">Tracking Air</span>
@@ -276,13 +277,13 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <main class="app-content" :class="{ 'auth-content': isAuthPage }">
+      <main class="app-content" :class="{ 'auth-content': isAuthPage || isLandingPage }">
         <RouterView />
       </main>
     </div>
 
     <!-- Mobile bottom navigation bar -->
-    <nav v-if="isLoggedIn && !isAuthPage" class="bottom-nav mobile-only">
+    <nav v-if="isLoggedIn && !isAuthPage && !isLandingPage" class="bottom-nav mobile-only">
       <RouterLink
         v-for="item in sidebarNavItems"
         :key="item.to"
@@ -329,7 +330,7 @@ onUnmounted(() => {
     </nav>
 
     <!-- WhatsApp Bubble (only when logged in) -->
-    <WaBubble v-if="isLoggedIn && !isAuthPage" />
+    <WaBubble v-if="isLoggedIn && !isAuthPage && !isLandingPage" />
   </div>
 </template>
 

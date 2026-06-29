@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import OrderMap from "../components/OrderMap.vue";
 import OrderStatusBadge from "../components/OrderStatusBadge.vue";
 import type { Order } from "../types";
-import { fetchOrderById, submitReview, updateOrderStatus } from "../services/orderService";
+import { fetchOrderById, submitReview, updateOrderStatus, uploadPaymentProof } from "../services/orderService";
 import { fetchProfile } from "../../auth/services/profileService";
 import type { Profile } from "../../auth/types";
 import { useAuthStore } from "../../auth/stores/authStore";
@@ -22,6 +22,35 @@ const ratingValue = ref(0);
 const reviewText = ref("");
 const submittingReview = ref(false);
 const reviewSuccess = ref(false);
+
+// Payment Proof State
+const paymentProofFile = ref<File | null>(null);
+const uploadingPaymentProof = ref(false);
+const paymentProofSuccess = ref(false);
+
+const handlePaymentProofChange = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  if (target.files && target.files.length > 0) {
+    paymentProofFile.value = target.files[0] || null;
+  }
+};
+
+const handleUploadPaymentProof = async () => {
+  if (!order.value || !paymentProofFile.value) return;
+  uploadingPaymentProof.value = true;
+  errorMsg.value = "";
+  try {
+    const updated = await uploadPaymentProof(order.value.id, paymentProofFile.value);
+    order.value.payment_status = updated.payment_status;
+    order.value.payment_proof_url = updated.payment_proof_url;
+    paymentProofSuccess.value = true;
+    paymentProofFile.value = null;
+  } catch (error) {
+    errorMsg.value = error instanceof Error ? error.message : "Gagal mengunggah bukti transfer.";
+  } finally {
+    uploadingPaymentProof.value = false;
+  }
+};
 
 
 const loadOrder = async () => {
@@ -159,6 +188,72 @@ onMounted(loadOrder);
           <span class="label">Catatan</span>
           <span class="value">{{ order.notes || '-' }}</span>
         </div>
+        <div>
+          <span class="label">Metode Bayar</span>
+          <span class="value">
+            {{ order.payment_method === 'transfer' ? '🏦 Transfer Bank' : '💵 Cash (COD)' }}
+          </span>
+        </div>
+        <div>
+          <span class="label">Status Bayar</span>
+          <span class="value">
+            <span class="pay-badge" :class="{
+              'pay-belum': order.payment_status === 'belum_bayar',
+              'pay-pending': order.payment_status === 'menunggu_verifikasi',
+              'pay-lunas': order.payment_status === 'lunas'
+            }">
+              {{ order.payment_status === 'belum_bayar' ? '🔴 Belum Bayar' : order.payment_status === 'menunggu_verifikasi' ? '🟡 Menunggu Verifikasi' : '🟢 Lunas' }}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Payment Section -->
+      <div v-if="order.payment_method === 'transfer'" class="payment-section">
+        <h3 class="proof-title">🏦 Pembayaran Transfer</h3>
+
+        <!-- Already uploaded proof -->
+        <div v-if="order.payment_proof_url" class="payment-proof-display">
+          <p class="payment-proof-label">Bukti Transfer:</p>
+          <img :src="order.payment_proof_url" alt="Bukti Transfer" class="proof-img" />
+          <p v-if="order.payment_status === 'menunggu_verifikasi'" class="payment-waiting-text">
+            ⏳ Bukti transfer sudah diunggah. Menunggu verifikasi admin...
+          </p>
+          <p v-if="order.payment_status === 'lunas'" class="payment-verified-text">
+            ✅ Pembayaran telah diverifikasi.
+          </p>
+        </div>
+
+        <!-- Upload form (customer only, not yet paid/uploaded) -->
+        <div v-else-if="profile?.role === 'customer' && order.payment_status === 'belum_bayar'" class="transfer-upload-section">
+          <div class="bank-info-card">
+            <p class="bank-info-title">📋 Transfer ke Rekening Berikut:</p>
+            <div class="bank-info-row">
+              <span>Bank</span><strong>BCA</strong>
+            </div>
+            <div class="bank-info-row">
+              <span>No. Rekening</span><strong>123-456-7890</strong>
+            </div>
+            <div class="bank-info-row">
+              <span>Atas Nama</span><strong>PT Bintang Water Jaya</strong>
+            </div>
+            <div class="bank-info-row">
+              <span>Total</span><strong class="total-amount">{{ formatRupiah(calculateOrderTotal(order.volume, order.customer_lat, order.customer_lng)) }}</strong>
+            </div>
+          </div>
+          <form @submit.prevent="handleUploadPaymentProof" class="upload-proof-form">
+            <label class="field">
+              <span>Upload Bukti Transfer</span>
+              <input type="file" accept="image/*" @change="handlePaymentProofChange" required />
+            </label>
+            <p v-if="paymentProofSuccess" class="success">Bukti transfer berhasil diunggah!</p>
+            <button type="submit" class="btn-primary" :disabled="!paymentProofFile || uploadingPaymentProof">
+              {{ uploadingPaymentProof ? 'Mengunggah...' : '📤 Upload Bukti Transfer' }}
+            </button>
+          </form>
+        </div>
+
+        <p v-else-if="order.payment_status === 'belum_bayar'" class="info">Pelanggan belum mengunggah bukti transfer.</p>
       </div>
 
       <div v-if="order.proof_url" class="proof-section">
@@ -678,5 +773,126 @@ onMounted(loadOrder);
 @keyframes slideUp {
   from { transform: translateY(12px) scale(0.98); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* ─── Payment Styles ─── */
+.pay-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pay-belum {
+  background: #fef2f2;
+  color: #dc2626;
+}
+.pay-pending {
+  background: #fffbeb;
+  color: #d97706;
+}
+.pay-lunas {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.payment-section {
+  margin-top: 24px;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 20px;
+}
+
+.payment-proof-display {
+  margin-top: 12px;
+}
+
+.payment-proof-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.payment-waiting-text {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.payment-verified-text {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #166534;
+}
+
+.bank-info-card {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.bank-info-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.bank-info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed #fde68a;
+  color: #92400e;
+}
+
+.bank-info-row:last-child {
+  border-bottom: none;
+}
+
+.bank-info-row strong {
+  color: #78350f;
+}
+
+.total-amount {
+  color: #16a34a !important;
+  font-size: 15px;
+}
+
+.transfer-upload-section {
+  margin-top: 12px;
+}
+
+.upload-proof-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upload-proof-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.upload-proof-form .field input[type="file"] {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
 }
 </style>

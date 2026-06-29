@@ -1,5 +1,5 @@
 import { supabase } from "../../core/supabaseClient";
-import type { NewOrder, Order, OrderStatus } from "../types";
+import type { NewOrder, Order, OrderStatus, PaymentStatus } from "../types";
 
 const ORDER_FIELDS = "*";
 
@@ -66,7 +66,13 @@ export const fetchAvailableOrders = async () => {
     throw error;
   }
 
-  return (data ?? []) as Order[];
+  // Exclude transfer orders that haven't been paid yet
+  const filtered = (data ?? []).filter((o: Order) => {
+    if (o.payment_method === 'transfer' && o.payment_status !== 'lunas') return false;
+    return true;
+  });
+
+  return filtered as Order[];
 };
 
 export const fetchAllOrders = async () => {
@@ -131,6 +137,8 @@ export const fetchOrdersPaginated = async (
   }
   if (filters.is_unassigned) {
     query = query.is("assigned_driver_id", null);
+    // For driver view: exclude transfer orders that haven't been paid
+    query = query.or('payment_method.eq.cash,payment_status.eq.lunas');
   }
   if (filters.is_pending_approval) {
     query = query.eq("status", "menunggu").not("assigned_driver_id", "is", null);
@@ -266,4 +274,45 @@ export const subscribeOrder = (orderId: string, handler: (order: Order) => void)
   return () => {
     supabase.removeChannel(channel);
   };
+};
+
+// ─── Payment Functions ───
+
+export const uploadPaymentProof = async (orderId: string, file: File) => {
+  const fileExt = file.name.split('.').pop();
+  const filePath = `payment/${orderId}-${Date.now()}.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('proofs')
+    .upload(filePath, file, { upsert: true });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from('proofs').getPublicUrl(filePath);
+
+  return updateOrder(orderId, {
+    payment_proof_url: data.publicUrl,
+    payment_status: 'menunggu_verifikasi',
+  });
+};
+
+export const verifyPayment = (orderId: string, adminId: string) => {
+  return updateOrder(orderId, {
+    payment_status: 'lunas' as PaymentStatus,
+    payment_verified_at: new Date().toISOString(),
+    payment_verified_by: adminId,
+  });
+};
+
+export const rejectPayment = (orderId: string) => {
+  return updateOrder(orderId, {
+    payment_status: 'belum_bayar' as PaymentStatus,
+    payment_proof_url: null,
+  });
+};
+
+export const confirmCashPayment = (orderId: string) => {
+  return updateOrder(orderId, {
+    payment_status: 'lunas' as PaymentStatus,
+  });
 };

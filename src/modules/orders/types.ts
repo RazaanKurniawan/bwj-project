@@ -1,4 +1,6 @@
 export type OrderStatus = "menunggu" | "menunggu_persetujuan" | "diproses" | "dikirim" | "selesai" | "batal";
+export type PaymentMethod = "transfer" | "cash";
+export type PaymentStatus = "belum_bayar" | "menunggu_verifikasi" | "lunas";
 
 export type Order = {
   id: string;
@@ -20,6 +22,12 @@ export type Order = {
   proof_url: string | null;
   rating: number | null;
   review: string | null;
+  payment_method: PaymentMethod;
+  payment_status: PaymentStatus;
+  payment_proof_url: string | null;
+  payment_verified_at: string | null;
+  payment_verified_by: string | null;
+  payment_amount: number;
   created_at: string;
   updated_at: string;
 };
