@@ -24,6 +24,18 @@ export const updateUserCredentials = (patch: { email?: string; password?: string
   return supabase.auth.updateUser(patch);
 };
 
+export const checkEmailExists = async (email: string): Promise<boolean> => {
+  const { data, error } = await supabase.rpc("check_email_exists", {
+    target_email: email,
+  });
+  if (error) {
+    console.warn("check_email_exists RPC failed:", error.message);
+    // If the RPC doesn't exist yet, fall back to allowing the request
+    return true;
+  }
+  return data === true;
+};
+
 export const resetPasswordForEmail = (email: string, redirectTo?: string) => {
   return supabase.auth.resetPasswordForEmail(email, { redirectTo });
 };

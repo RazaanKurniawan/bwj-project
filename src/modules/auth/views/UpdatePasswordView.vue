@@ -52,6 +52,7 @@ const handleUpdatePassword = async () => {
     successMsg.value = "Password berhasil diperbarui! Anda akan diarahkan ke halaman login.";
     setTimeout(() => {
       signOut();
+      authStore.isRecoveryMode.value = false;
       authStore.clearSession(); // Force them to login again with new password
       router.replace("/login");
     }, 3000);

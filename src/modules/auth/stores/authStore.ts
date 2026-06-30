@@ -8,6 +8,13 @@ const session = ref<Session | null>(null);
 const profile = ref<Profile | null>(null);
 const loading = ref(true);
 
+/**
+ * True when the user arrived via a password-recovery link.
+ * Even though Supabase creates a valid session for the recovery token,
+ * we should NOT treat the user as fully logged-in.
+ */
+const isRecoveryMode = ref(false);
+
 let initialized = false;
 let authListenerReady = false;
 let initPromise: Promise<void> | null = null;
@@ -50,9 +57,15 @@ const updateSession = async (newSession: Session | null) => {
 const handleAuthEvent = async (event: AuthChangeEvent, newSession: Session | null) => {
   // Session expired or user signed out
   if (event === "SIGNED_OUT") {
+    isRecoveryMode.value = false;
     clearSession();
     notifySessionExpired();
     return;
+  }
+
+  // Supabase fires PASSWORD_RECOVERY when the user arrives via a recovery link
+  if (event === "PASSWORD_RECOVERY") {
+    isRecoveryMode.value = true;
   }
 
   // Token refresh failed — session is gone
@@ -112,6 +125,7 @@ export const useAuthStore = () => {
     session,
     profile,
     loading,
+    isRecoveryMode,
     user: computed(() => session.value?.user ?? null),
     initAuth,
     updateSession,

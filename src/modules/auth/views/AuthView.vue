@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, verifyOtp, resendOtp } from "../services/authService";
+import { signInWithEmail, signUpWithEmail, resetPasswordForEmail, checkEmailExists, verifyOtp, resendOtp } from "../services/authService";
 import { useAuthStore } from "../stores/authStore";
 import { supabase } from "../../core/supabaseClient";
 import type { UserRole } from "../types";
@@ -223,6 +223,14 @@ const handleForgotPassword = async () => {
 
   if (!email.value) {
     errorMsg.value = "Silakan masukkan alamat email Anda.";
+    loading.value = false;
+    return;
+  }
+
+  // Validate that the email is registered before sending
+  const emailExists = await checkEmailExists(email.value);
+  if (!emailExists) {
+    errorMsg.value = "Email tidak terdaftar. Silakan periksa kembali atau daftar akun baru.";
     loading.value = false;
     return;
   }

@@ -39,9 +39,13 @@ const handleMouseLeave = () => {
   if (isDesktop.value) sidebarOpen.value = false;
 };
 
-// Detect if current route is the auth/login page
-const isAuthPage = computed(() => route.path === "/login");
+// Detect if current route is the auth/login page or recovery-mode pages
+const isAuthPage = computed(() => route.path === "/login" || route.path === "/update-password");
 const isLandingPage = computed(() => route.path === "/");
+const isRecoveryMode = computed(() => authStore.isRecoveryMode.value);
+
+// Should the full app chrome (sidebar, nav, topbar) be hidden?
+const hideAppChrome = computed(() => isAuthPage.value || isLandingPage.value || isRecoveryMode.value);
 
 const handleLogout = async () => {
   sidebarOpen.value = false;
@@ -127,11 +131,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'no-sidebar': isAuthPage || isLandingPage }">
+  <div class="app-shell" :class="{ 'no-sidebar': hideAppChrome }">
     <!-- Sidebar overlay (mobile) -->
     <Transition name="fade">
       <div
-        v-if="sidebarOpen && isLoggedIn && !isAuthPage && !isLandingPage"
+        v-if="sidebarOpen && isLoggedIn && !hideAppChrome"
         class="sidebar-overlay"
         @click="sidebarOpen = false"
       ></div>
@@ -139,7 +143,7 @@ onUnmounted(() => {
 
     <!-- Sidebar -->
     <aside
-      v-if="isLoggedIn && !isAuthPage && !isLandingPage"
+      v-if="isLoggedIn && !hideAppChrome"
       class="sidebar"
       :class="{ open: sidebarOpen }"
       @mouseenter="handleMouseEnter"
@@ -247,9 +251,9 @@ onUnmounted(() => {
     </aside>
 
     <!-- Main content area -->
-    <div class="app-main" :class="{ 'with-sidebar': isLoggedIn && !isAuthPage && !isLandingPage }">
+    <div class="app-main" :class="{ 'with-sidebar': isLoggedIn && !hideAppChrome }">
       <!-- Top bar (only on mobile when logged in, or always when on auth page) -->
-      <header v-if="!isAuthPage && !isLandingPage && isLoggedIn" class="app-topbar mobile-only">
+      <header v-if="!hideAppChrome && isLoggedIn" class="app-topbar mobile-only">
         <div class="topbar-brand">
           <img src="/logobwj.jpeg" alt="BWJ" class="brand-mark-sm-img" />
           <span class="brand-title-sm">Tracking Air</span>
@@ -277,13 +281,13 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <main class="app-content" :class="{ 'auth-content': isAuthPage || isLandingPage }">
+      <main class="app-content" :class="{ 'auth-content': hideAppChrome }">
         <RouterView />
       </main>
     </div>
 
     <!-- Mobile bottom navigation bar -->
-    <nav v-if="isLoggedIn && !isAuthPage && !isLandingPage" class="bottom-nav mobile-only">
+    <nav v-if="isLoggedIn && !hideAppChrome" class="bottom-nav mobile-only">
       <RouterLink
         v-for="item in sidebarNavItems"
         :key="item.to"
@@ -330,7 +334,7 @@ onUnmounted(() => {
     </nav>
 
     <!-- WhatsApp Bubble (only when logged in) -->
-    <WaBubble v-if="isLoggedIn && !isAuthPage && !isLandingPage" />
+    <WaBubble v-if="isLoggedIn && !hideAppChrome" />
   </div>
 </template>
 

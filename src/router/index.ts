@@ -95,8 +95,25 @@ router.beforeEach(async (to) => {
   const authStore = useAuthStore();
   await authStore.initAuth();
 
-  if (to.hash.includes("type=recovery") && to.path !== "/update-password") {
-    return { path: "/update-password", hash: to.hash };
+  // ── Detect password-recovery flow ──
+  // Supabase recovery links contain `type=recovery` (or `type=recovery` inside an access_token hash).
+  // When detected, mark recovery mode so the sidebar is hidden and protected routes are blocked.
+  const hashStr = to.hash || window.location.hash || "";
+  if (hashStr.includes("type=recovery")) {
+    authStore.isRecoveryMode.value = true;
+    if (to.path !== "/update-password") {
+      return { path: "/update-password", hash: to.hash };
+    }
+  }
+
+  // Clear recovery mode when navigating to login (after password update completes)
+  if (to.path === "/login") {
+    authStore.isRecoveryMode.value = false;
+  }
+
+  // While in recovery mode, only allow the update-password and login pages
+  if (authStore.isRecoveryMode.value && to.path !== "/update-password" && to.path !== "/login") {
+    return { path: "/update-password" };
   }
 
   if (to.meta.public) {
